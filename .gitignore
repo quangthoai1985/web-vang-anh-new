@@ -5,7 +5,7 @@
 # Firebase
 .firebase/
 firebase-debug.log
-.firebaserc
+# Note: .firebaserc is needed for deploy, do not ignore
 
 # GitHub (workflows need special token permission)
 .github/
