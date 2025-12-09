@@ -7,6 +7,9 @@
 firebase-debug.log
 .firebaserc
 
+# GitHub (workflows need special token permission)
+.github/
+
 # Sensitive files
 serviceAccountKey.json
 *-key.json
