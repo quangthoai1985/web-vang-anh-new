@@ -1,0 +1,137 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    
+    // Helper Functions
+    function hasClaimRole(role) {
+      return request.auth != null && request.auth.token.role == role;
+    }
+    
+    function isAdmin() {
+      return request.auth != null && request.auth.token.role == 'admin';
+    }
+    
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    // 1. Folder Văn bản của trường (school_documents)
+    match /school_documents/{allPaths=**} {
+      // Admin/Vice Principal/Head Teacher/Vice Head Teacher toàn quyền
+      allow read, write: if hasClaimRole('admin') || 
+                            hasClaimRole('vice_principal') ||
+                            hasClaimRole('head_teacher') || 
+                            hasClaimRole('vice_head_teacher');
+      
+      // Teacher, Office Head, Staff - Read only
+      allow read: if hasClaimRole('teacher') ||
+                     hasClaimRole('office_head') ||
+                     hasClaimRole('staff');
+    }
+    
+    // 2. Folder Bán trú & Dinh dưỡng (boarding_docs)
+    match /boarding_docs/{allPaths=**} {
+      // Admin, Vice Principal - toàn quyền
+      allow read, write: if hasClaimRole('admin') || 
+                            hasClaimRole('vice_principal');
+      
+      // Office Head - toàn quyền (Tổ trưởng tổ văn phòng)
+      allow read, write: if hasClaimRole('office_head');
+      
+      // Staff (Y tế, Kế toán, Văn thư) - toàn quyền
+      allow read, write: if hasClaimRole('staff');
+      
+      // Head Teacher, Vice Head Teacher, Teacher - Read only
+      allow read: if hasClaimRole('head_teacher') || 
+                     hasClaimRole('vice_head_teacher') || 
+                     hasClaimRole('teacher');
+    }
+    
+    // 3. Folder Kế hoạch & Báo cáo Tổ Văn Phòng (office_docs)
+    match /office_docs/{allPaths=**} {
+      // Admin, Vice Principal - toàn quyền
+      allow read, write: if hasClaimRole('admin') || 
+                            hasClaimRole('vice_principal');
+      
+      // Office Head - toàn quyền (Tổ trưởng tổ văn phòng)
+      allow read, write: if hasClaimRole('office_head');
+      
+      // Staff (Y tế, Kế toán, Văn thư) - toàn quyền
+      allow read, write: if hasClaimRole('staff');
+      
+      // Head Teacher, Vice Head Teacher - read/write for collaboration
+      allow read, write: if hasClaimRole('head_teacher') || 
+                            hasClaimRole('vice_head_teacher');
+      
+      // Teacher - Read only
+      allow read: if hasClaimRole('teacher');
+    }
+    
+    // 4. Folder Kế hoạch Tổ Chuyên Môn (plans)
+    match /plans/{allPaths=**} {
+      // Admin, Vice Principal - toàn quyền
+      allow read, write: if hasClaimRole('admin') || 
+                            hasClaimRole('vice_principal');
+      
+      // Head Teacher, Vice Head Teacher - toàn quyền
+      allow read, write: if hasClaimRole('head_teacher') || 
+                            hasClaimRole('vice_head_teacher');
+      
+      // Teacher - read/write for collaboration
+      allow read, write: if hasClaimRole('teacher');
+      
+      // Office staff - Read only
+      allow read: if hasClaimRole('office_head') || 
+                     hasClaimRole('staff');
+    }
+    
+    // 5. Folder Văn bản cơ quan cấp trên (directive_documents)
+    match /directive_documents/{allPaths=**} {
+      // CHẶN Staff - CHỈ Admin, Vice Principal, Head Teacher, Teacher
+      allow read: if hasClaimRole('admin') || 
+                     hasClaimRole('vice_principal') ||
+                     hasClaimRole('head_teacher') || 
+                     hasClaimRole('vice_head_teacher') || 
+                     hasClaimRole('teacher');
+      // Write: Admin, Head Teacher, Vice Head Teacher, Teacher
+      allow write: if hasClaimRole('admin') || 
+                      hasClaimRole('head_teacher') || 
+                      hasClaimRole('vice_head_teacher') || 
+                      hasClaimRole('teacher');
+    }
+
+    // 4. Folder Lớp học (Old path - nếu còn dùng)
+    match /classes/{classId}/{allPaths=**} {
+       // Admin/Tổ trưởng toàn quyền
+       allow read, write: if hasClaimRole('admin') || 
+                             hasClaimRole('head_teacher') || 
+                             hasClaimRole('vice_head_teacher');
+       // Giáo viên: Cho phép đọc/ghi nếu user có role teacher
+       allow read, write: if hasClaimRole('teacher'); 
+    }
+    
+    // 5. Folder Hồ sơ lớp (class-files) - Path mới
+    match /class-files/{classId}/{allPaths=**} {
+       // Admin/Vice Principal/Tổ trưởng/Office Head/Staff toàn quyền
+       allow read, write: if hasClaimRole('admin') || 
+                             hasClaimRole('vice_principal') ||
+                             hasClaimRole('head_teacher') || 
+                             hasClaimRole('vice_head_teacher') ||
+                             hasClaimRole('office_head') ||
+                             hasClaimRole('staff');
+       
+       // Teacher chỉ được upload/đọc file của lớp mình
+       // Kiểm tra classId trong path phải match với accessScope trong token
+       allow read, write: if hasClaimRole('teacher') && 
+                              request.auth.token.accessScope == classId;
+    }
+    
+    // 6. Folder Cài đặt ứng dụng (app_settings)
+    match /app_settings/{allPaths=**} {
+      // Public read để login page có thể load background
+      allow read: if true;
+      // Chỉ Admin write (check both token and Firestore)
+      allow write: if isAdmin();
+    }
+  }
+}

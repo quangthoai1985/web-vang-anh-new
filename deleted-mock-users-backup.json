@@ -1,0 +1,90 @@
+{
+  "deletedAt": "2025-11-24T14:10:37.908Z",
+  "users": [
+    {
+      "id": "u1",
+      "username": "admin",
+      "email": "admin@mgvanganh.edu.vn",
+      "fullName": "Nguyễn Thị Hiệu Trưởng",
+      "role": "admin",
+      "roleLabel": "Hiệu Trưởng",
+      "group": "Ban Giám Hiệu",
+      "accessScope": "Toàn trường",
+      "status": "active",
+      "permissions": [
+        "all"
+      ]
+    },
+    {
+      "id": "u2",
+      "username": "hieupho1",
+      "email": "hieupho1@mgvanganh.edu.vn",
+      "fullName": "Trần Thị Phó Hiệu",
+      "role": "admin",
+      "roleLabel": "Phó Hiệu Trưởng",
+      "group": "Ban Giám Hiệu",
+      "accessScope": "Toàn trường",
+      "status": "active",
+      "permissions": [
+        "manage_academic"
+      ]
+    },
+    {
+      "id": "u3",
+      "username": "gv01",
+      "email": "nguyenthilan@mgvanganh.edu.vn",
+      "fullName": "Nguyễn Thị Lan",
+      "role": "teacher",
+      "roleLabel": "Giáo viên",
+      "group": "Tổ Chuyên Môn",
+      "accessScope": "la1",
+      "status": "active",
+      "permissions": [
+        "view_docs",
+        "create_plans"
+      ]
+    },
+    {
+      "id": "u4",
+      "username": "ketoan",
+      "email": "ketoan@mgvanganh.edu.vn",
+      "fullName": "Phạm Thị Tính",
+      "role": "staff",
+      "roleLabel": "Kế toán",
+      "group": "Tổ Văn Phòng",
+      "accessScope": "Phòng Tài chính",
+      "status": "active",
+      "permissions": [
+        "view_finance"
+      ]
+    },
+    {
+      "id": "u5",
+      "username": "gv02",
+      "email": "lethimai@mgvanganh.edu.vn",
+      "fullName": "Lê Thị Mai",
+      "role": "teacher",
+      "roleLabel": "Giáo viên",
+      "group": "Tổ Chuyên Môn",
+      "accessScope": "choi",
+      "status": "inactive",
+      "permissions": [
+        "view_docs"
+      ]
+    },
+    {
+      "id": "u6",
+      "username": "yte",
+      "email": "lethiyte@mgvanganh.edu.vn",
+      "fullName": "Lê Thị Y Tế",
+      "role": "staff",
+      "roleLabel": "Nhân viên Y tế",
+      "group": "Tổ Văn Phòng",
+      "accessScope": "Phòng Y tế",
+      "status": "active",
+      "permissions": [
+        "manage_medical"
+      ]
+    }
+  ]
+}

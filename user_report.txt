@@ -1,0 +1,142 @@
+﻿=== DANH S├üCH Tß║ñT Cß║ó USER TRONG Hß╗å THß╗ÉNG ===
+
+Tß╗òng sß╗æ: 13 users
+
+
+≡ƒææ ADMIN (Hiß╗çu tr╞░ß╗ƒng) (1 ng╞░ß╗¥i)
+ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+≡ƒôî L├¬ Thß╗ï T├║ Trinh (@admin)
+   Email: admin@mgvanganh.edu.vn
+   Role: admin (Hiß╗çu Tr╞░ß╗ƒng)
+   Group: Ban Gi├ím Hiß╗çu
+   Access Scope: To├án tr╞░ß╗¥ng
+   Permissions: ["manage_documents","access_system_admin"]
+   Status: Γ£à Active
+
+
+≡ƒÄû∩╕Å  PH├ô HIß╗åU TR╞»ß╗₧NG (1 ng╞░ß╗¥i)
+ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+≡ƒôî Nguyß╗àn Mai Thß║úo (@nm.thao)
+   Email: nm.thao@mgvanganh.edu.vn
+   Role: vice_principal (Ph├│ Hiß╗çu Tr╞░ß╗ƒng)
+   Group: Ban Gi├ím Hiß╗çu
+   Access Scope: To├án tr╞░ß╗¥ng
+   Permissions: ["manage_boarding_docs"]
+   Status: Γ£à Active
+
+
+≡ƒæ¿ΓÇì≡ƒÅ½ Tß╗ö TR╞»ß╗₧NG CHUY├èN M├öN (1 ng╞░ß╗¥i)
+ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+≡ƒôî Huß╗│nh Thß╗ï Nhiß╗ân (@ht.nhien)
+   Email: ht.nhien@mgvanganh.edu.vn
+   Role: head_teacher (Tß╗ò tr╞░ß╗ƒng chuy├¬n m├┤n)
+   Group: Tß╗ò Chuy├¬n M├┤n
+   Access Scope: la2
+   Permissions: ["manage_plans"]
+   Status: Γ£à Active
+
+
+≡ƒæ¿ΓÇì≡ƒÅ½ Tß╗ö PH├ô CHUY├èN M├öN (1 ng╞░ß╗¥i)
+ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+≡ƒôî L├¬ Thß╗ï B├¡ch V├ón (@ltb.van)
+   Email: ltb.van@mgvanganh.edu.vn
+   Role: vice_head_teacher (Tß╗ò ph├│ chuy├¬n m├┤n)
+   Group: Tß╗ò Chuy├¬n M├┤n
+   Access Scope: la2
+   Permissions: ["manage_plans"]
+   Status: Γ£à Active
+
+
+≡ƒæ⌐ΓÇì≡ƒÅ½ GI├üO VI├èN (7 ng╞░ß╗¥i)
+ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+≡ƒôî Nguyß╗àn Thß╗ï Thß╗ºy Ti├¬n (@ntt.tien)
+   Email: ntt.tien@mgvanganh.edu.vn
+   Role: teacher (Gi├ío vi├¬n)
+   Group: Tß╗ò Chuy├¬n M├┤n
+   Access Scope: la3
+   Permissions: []
+   Status: Γ£à Active
+
+≡ƒôî L├¬ Thß╗ï Ngß╗ìc B├¡ch (@ltn.bich)
+   Email: ltn.bich@mgvanganh.edu.vn
+   Role: teacher (Gi├ío vi├¬n)
+   Group: Tß╗ò Chuy├¬n M├┤n
+   Access Scope: la1
+   Permissions: []
+   Status: Γ£à Active
+
+≡ƒôî Trß║ºn Thß╗ï Yß║┐n Nhi (@tty.nhi)
+   Email: tty.nhi@mgvanganh.edu.vn
+   Role: teacher (Gi├ío vi├¬n)
+   Group: Tß╗ò Chuy├¬n M├┤n
+   Access Scope: la4
+   Permissions: []
+   Status: Γ£à Active
+
+≡ƒôî V├╡ Thß╗ï Kim Tß╗Åa (@vk.toa)
+   Email: vk.toa@mgvanganh.edu.vn
+   Role: teacher (Gi├ío vi├¬n)
+   Group: Tß╗ò Chuy├¬n M├┤n
+   Access Scope: la1
+   Permissions: []
+   Status: Γ£à Active
+
+≡ƒôî Nguyß╗àn Thß╗ï Mß╗╣ H╞░╞íng (@ntm.huong)
+   Email: ntm.huong@mgvanganh.edu.vn
+   Role: teacher (Gi├ío vi├¬n)
+   Group: Tß╗ò Chuy├¬n M├┤n
+   Access Scope: la3
+   Permissions: []
+   Status: Γ£à Active
+
+≡ƒôî Nguyß╗àn Thß╗ï M├¿ (@nt.me)
+   Email: nt.me@mgvanganh.edu.vn
+   Role: teacher (Gi├ío vi├¬n)
+   Group: Tß╗ò Chuy├¬n M├┤n
+   Access Scope: choi
+   Permissions: []
+   Status: Γ£à Active
+
+≡ƒôî La Th├╣y Tr├ón (@lt.tran)
+   Email: lt.tran@mgvanganh.edu.vn
+   Role: teacher (Gi├ío vi├¬n)
+   Group: Tß╗ò Chuy├¬n M├┤n
+   Access Scope: choi
+   Permissions: []
+   Status: Γ£à Active
+
+
+≡ƒÅó Tß╗ö TR╞»ß╗₧NG Tß╗ö V─éN PH├ÆNG (1 ng╞░ß╗¥i)
+ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+≡ƒôî Huß╗│nh Ph╞░╞íng Ngh─⌐a (@hp.nghia)
+   Email: hp.nghia@mgvanganh.edu.vn
+   Role: office_head (Tß╗ò tr╞░ß╗ƒng tß╗ò v─ân ph├▓ng)
+   Group: Tß╗ò V─ân Ph├▓ng
+   Access Scope: To├án bß╗Ö Tß╗ò V─ân ph├▓ng
+   Permissions: ["manage_office_docs"]
+   Status: Γ£à Active
+
+
+≡ƒæö NH├éN VI├èN Tß╗ö V─éN PH├ÆNG (1 ng╞░ß╗¥i)
+ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+≡ƒôî Qu├ích Thß╗ï Hß║▒ng (@qt.hang)
+   Email: qt.hang@mgvanganh.edu.vn
+   Role: staff (V─ân th╞░)
+   Group: Tß╗ò V─ân Ph├▓ng
+   Access Scope: Kh├┤ng gian Tß╗ò V─ân ph├▓ng
+   Permissions: ["manage_documents","manage_office_docs"]
+   Status: Γ£à Active
+
+
+=== PH├éN T├ìCH ß║óNH H╞»ß╗₧NG ===
+
+≡ƒæÑ Tß╗òng sß╗æ user c├│ role office_head hoß║╖c staff: 2
+
+≡ƒôï Danh s├ích user ─æ╞░ß╗úc h╞░ß╗ƒng lß╗úi tß╗½ fix:
+   - Huß╗│nh Ph╞░╞íng Ngh─⌐a (@hp.nghia) - Tß╗ò tr╞░ß╗ƒng tß╗ò v─ân ph├▓ng - Γ£à ─É├ú c├│ permission
+   - Qu├ích Thß╗ï Hß║▒ng (@qt.hang) - V─ân th╞░ - Γ£à ─É├ú c├│ permission
+
+Γ£à Kß║┐t luß║¡n: Tß║Ñt cß║ú user vß╗¢i role office_head v├á staff giß╗¥ c├│ thß╗â:
+   - Upload t├ái liß╗çu v├áo office_docs (Kß║┐ hoß║ích & B├ío c├ío)
+   - Upload t├ái liß╗çu v├áo boarding_docs (B├ín tr├║)
+   - Xem v├á quß║ún l├╜ t├ái liß╗çu cß╗ºa hß╗ì

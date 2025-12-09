@@ -1,0 +1,109 @@
+import { LucideIcon } from 'lucide-react';
+
+export interface DashboardCardData {
+  id: string;
+  title: string;
+  description: string;
+  icon: LucideIcon;
+  colorClass: string; // Tailwind text color class
+  bgClass: string; // Tailwind bg gradient class
+  hoverClass: string;
+  stats?: string; // Placeholder for "12 Documents" etc.
+}
+
+// Updated Roles based on requirements
+export type UserRole = 'admin' | 'vice_principal' | 'head_teacher' | 'vice_head_teacher' | 'teacher' | 'staff' | 'office_head';
+
+export interface User {
+  name: string;
+  avatar: string;
+  role: UserRole;
+}
+
+export interface UserAccount {
+  id: string;
+  username: string;
+  email: string;
+  password?: string;
+  fullName: string;
+  role: UserRole; // Updated to use the specific type
+  roleLabel: string; // Display name for the role (e.g., "Hiệu Trưởng")
+  group: string;
+  accessScope?: string; // Optional: specific class ID (e.g., 'la1')
+  permissions?: string[]; // List of specific permissions (e.g., 'manage_documents')
+  status: 'active' | 'inactive';
+  avatar?: string;
+}
+
+export interface DirectiveDocument {
+  id: string;
+  trichYeu: string;
+  soKyHieu: string;
+  coQuanBanHanh: string;
+  ngayBanHanh: string;
+  loaiVanBan: string;
+  tomTatNoiDung?: string;
+  fileDinhKemUrl: string;
+}
+
+export interface Comment {
+  id: string;
+  userId: string;
+  userName: string;
+  userRole: string;
+  content: string;
+  timestamp: string;
+}
+
+export interface OfficeDocument {
+  id: string;
+  name: string;
+  type: 'excel' | 'word' | 'pdf' | 'other';
+  category: 'finance' | 'medical' | 'general' | 'menu' | 'food_safety' | 'nutrition';
+  uploader: {
+    id: string;
+    name: string;
+    role: string;
+    avatar?: string;
+  };
+  uploadDate: string;
+  comments: Comment[];
+  fileUrl: string;
+}
+
+export interface Notification {
+  id: string;
+  senderId: string;
+  senderName: string;
+  senderAvatar?: string;
+  targetPath: string;
+  message: string;
+  type: 'upload' | 'comment' | 'system';
+  isRead: boolean;
+  createdAt: string; // ISO String
+  receivers: string[];
+  metadata?: {
+    fileType?: 'word' | 'pdf' | 'excel' | 'image';
+    fileName?: string;
+  };
+}
+
+export interface ClassFile {
+  id: string;
+  name: string;
+  type: 'word' | 'excel' | 'pdf' | 'image';
+  date: string;
+  uploader: string;
+  hasNewComments: boolean;
+  commentCount: number;
+  planType?: 'year' | 'month' | 'week';
+  week?: string;
+  category?: 'plan' | 'assessment' | 'steam' | 'students';
+}
+
+export interface MonthFolder {
+  id: string;
+  name: string;
+  fileCount: number;
+  files: ClassFile[];
+}

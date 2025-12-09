@@ -1,0 +1,139 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // --- HÀM TIỆN ÍCH (HELPER FUNCTIONS) ---
+    
+    // Kiểm tra đã đăng nhập chưa
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    
+    // BOOTSTRAP: Cho phép email admin cụ thể được quyền ghi đè mọi thứ (để nạp dữ liệu ban đầu)
+    function isBootstrapAdmin() {
+      return request.auth.token.email == 'admin@mgvanganh.edu.vn';
+    }
+    
+    // Lấy thông tin Role của user từ Collection 'users'
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+    
+    // Kiểm tra Role (Ưu tiên Custom Claim, fallback sang Firestore doc)
+    function hasRole(role) {
+      return (request.auth.token.get('role', '') == role) || 
+             (isSignedIn() && getUserData().role == role);
+    }
+    
+    // Kiểm tra Permission (Lưu trong field 'permissions' của user doc)
+    function hasPermission(permission) {
+      return isSignedIn() && (permission in getUserData().permissions);
+    }
+
+    function isAdmin() { return hasRole('admin'); } // Hiệu trưởng
+    function isVicePrincipal() { return hasRole('vice_principal'); } // Phó Hiệu trưởng
+    function isStaff() { return hasRole('staff'); } // Văn phòng/Y tế
+    function isHeadTeacher() { return hasRole('head_teacher'); } // Tổ trưởng CM
+    function isViceHeadTeacher() { return hasRole('vice_head_teacher'); } // Tổ phó CM
+    function isOfficeHead() { return hasRole('office_head'); } // Tổ trưởng VP
+    function isTeacher() { return hasRole('teacher'); } // Giáo viên
+
+    // --- QUY TẮC CỤ THỂ CHO TỪNG COLLECTION ---
+
+    // 1. COLLECTION USERS (Người dùng)
+    match /users/{userId} {
+      // Ai cũng đọc được thông tin cơ bản (để hiển thị Avatar/Tên người đăng)
+      allow read: if isSignedIn(); 
+      // Chỉ Admin mới được tạo/sửa/xóa user (hoặc chính chủ sửa thông tin mình)
+      // Thêm isBootstrapAdmin() để nạp dữ liệu lần đầu
+      allow write: if isAdmin() || request.auth.uid == userId || isBootstrapAdmin();
+    }
+
+    // 2. VĂN BẢN CHUNG (directive_docs, school_docs)
+    match /directive_documents/{docId} {
+      allow read: if isSignedIn(); // Toàn trường xem được
+      // Write: Admin hoặc có permission manage_documents (Staff/Vice Principal cần được cấp)
+      allow write: if isAdmin() || hasPermission('manage_documents') || isBootstrapAdmin();
+    }
+    match /school_documents/{docId} {
+      allow read: if isSignedIn(); // Toàn trường xem được
+      // Write: Admin hoặc có permission manage_documents (Staff/Vice Principal cần được cấp)
+      allow write: if isAdmin() || hasPermission('manage_documents') || isBootstrapAdmin();
+    }
+
+    // 3. KHO TỔ VĂN PHÒNG & BÁN TRÚ (office_docs, boarding_docs)
+    match /office_docs/{docId} {
+      // Vice Principal và Staff XEM được, Teacher/Head Teacher KHÔNG XEM
+      allow read: if isAdmin() || isVicePrincipal() || isOfficeHead() || isStaff() || isBootstrapAdmin();
+      // Write: Admin, Office Head, Staff toàn quyền
+      allow write: if isAdmin() || isOfficeHead() || isStaff() || isBootstrapAdmin();
+    }
+    match /boarding_docs/{docId} {
+      // Tương tự Office Docs
+      allow read: if isAdmin() || isVicePrincipal() || isOfficeHead() || isStaff() || isBootstrapAdmin();
+      // Write: Admin, Office Head, Staff toàn quyền
+      allow write: if isAdmin() || isOfficeHead() || isStaff() || isBootstrapAdmin();
+    }
+
+    // 4. KẾ HOẠCH TỔ CHUYÊN MÔN (plans)
+    match /plans/{docId} {
+      // CHẶN Staff - CHỈ Admin, Vice Principal, Head Teacher, Teacher được xem
+      allow read: if isAdmin() || isVicePrincipal() || isHeadTeacher() || isViceHeadTeacher() || isTeacher() || isBootstrapAdmin();
+      
+      // Write: Head Teacher toàn quyền, Teacher tạo và sửa/xóa của mình
+      allow create: if isAdmin() || isHeadTeacher() || isViceHeadTeacher() || isTeacher() || isBootstrapAdmin();
+      allow update, delete: if isAdmin() || isHeadTeacher() || isViceHeadTeacher() || 
+                              (isTeacher() && resource.data.uploader == getUserData().fullName) || 
+                              isBootstrapAdmin();
+    }
+
+    // 5. DỮ LIỆU LỚP HỌC (classes)
+    match /classes/{classId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin() || isBootstrapAdmin();
+    }
+
+    // 6. HỒ SƠ LỚP (class_files - Root collection)
+    match /class_files/{fileId} {
+      // Vice Principal, Head Teacher, Staff xem tất cả lớp
+      // Teacher chỉ xem lớp mình
+      allow read: if isAdmin() || isVicePrincipal() || isHeadTeacher() || isViceHeadTeacher() || isOfficeHead() || isStaff() || isBootstrapAdmin() ||
+                     (isTeacher() && resource.data.classId == getUserData().accessScope);
+      
+      // Admin và Head Teacher có full quyền write
+      allow write: if isAdmin() || isHeadTeacher() || isViceHeadTeacher() || isBootstrapAdmin();
+      
+      // Teacher được tạo/sửa/xóa file cho lớp mình
+      // Đảm bảo classId trong file match với accessScope của teacher
+      allow create: if isTeacher() && 
+                       request.resource.data.classId == getUserData().accessScope;
+      
+      allow update, delete: if isTeacher() && 
+                               resource.data.classId == getUserData().accessScope;
+    }
+
+    // 6. THÔNG BÁO (notifications)
+    match /notifications/{notifId} {
+      // User chỉ đọc được thông báo của chính mình (trong mảng receivers)
+      allow read: if isSignedIn() && request.auth.uid in resource.data.receivers;
+      // Hệ thống hoặc User tạo thông báo (khi upload/comment)
+      allow create: if isSignedIn();
+      // User update (đánh dấu đã đọc)
+      allow update: if isSignedIn() && request.auth.uid in resource.data.receivers;
+    }
+    
+    // 7. CÀI ĐẶT ỨNG DỤNG (app_settings)
+    match /app_settings/{settingId} {
+      // Public read để login page có thể load background mà không cần auth
+      allow read: if true;
+      // Chỉ Admin được write
+      allow write: if isAdmin() || isBootstrapAdmin();
+    }
+    
+    // (Tùy chọn) Cho phép ghi comment (nếu tách collection)
+    match /comments/{commentId} {
+       allow read: if isSignedIn();
+       allow create: if isSignedIn(); 
+    }
+  }
+}
