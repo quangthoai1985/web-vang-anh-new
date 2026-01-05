@@ -7,6 +7,8 @@
 ## 📖 Giới thiệu
 Đây là **Hệ thống Quản lý Dữ liệu và Hồ sơ Số hóa** được xây dựng và phát triển dành riêng cho **Trường Mẫu giáo Vàng Anh**. Hệ thống giúp chuyển đổi số toàn diện các quy trình quản lý hồ sơ, sổ sách, thực đơn bán trú và các văn bản hành chính trong nhà trường, giúp Ban giám hiệu và Giáo viên dễ dàng lưu trữ, tra cứu và quản lý thông tin một cách khoa học, hiệu quả.
 
+👉 **[Xem chi tiết Quy trình Hoạt động & Phân quyền tại đây](docs/QUY_TRINH_HOAT_DONG.md)**
+
 ## 🚀 Tính năng chính
 
 ### 1. Quản lý Hồ sơ & Văn bản
