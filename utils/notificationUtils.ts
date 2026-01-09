@@ -2,6 +2,16 @@ import { db } from '../firebase';
 import { collection, addDoc, getDocs, query, where } from 'firebase/firestore';
 import { User, UserRole } from '../types';
 
+const ROLE_NAMES: Record<string, string> = {
+    admin: 'Ban Giám Hiệu',
+    vice_principal: 'Phó Hiệu Trưởng',
+    head_teacher: 'Tổ Trưởng Chuyên Môn',
+    vice_head_teacher: 'Tổ Phó Chuyên Môn',
+    teacher: 'Giáo Viên',
+    staff: 'Nhân Viên',
+    office_head: 'Tổ Trưởng Văn Phòng'
+};
+
 // Helper to get Admin UIDs
 const getAdminIds = async (): Promise<string[]> => {
     const q = query(collection(db, 'users'), where('role', '==', 'admin'));
@@ -17,9 +27,6 @@ const getHeadTeacherIds = async (): Promise<string[]> => {
 };
 
 // Helper to get Group Members (Teachers in the same group)
-// Note: This assumes we have a way to identify group. For now, we'll fetch all teachers if needed, 
-// or refine based on specific requirements. The requirement says "UID tất cả Giáo viên trong tổ".
-// We might need to fetch users by 'group' field if it exists.
 const getGroupTeacherIds = async (groupName: string): Promise<string[]> => {
     const q = query(collection(db, 'users'), where('role', '==', 'teacher'), where('group', '==', groupName));
     const snapshot = await getDocs(q);
@@ -27,8 +34,6 @@ const getGroupTeacherIds = async (groupName: string): Promise<string[]> => {
 };
 
 // Helper to get Class Teacher (GVCN) by Class ID
-// The requirement says: "UID của Giáo viên chủ nhiệm Lớp Lá 1".
-// We assume 'accessScope' in User holds the Class ID (e.g., 'la1').
 const getClassTeacherId = async (classId: string): Promise<string[]> => {
     const q = query(collection(db, 'users'), where('role', '==', 'teacher'), where('accessScope', '==', classId));
     const snapshot = await getDocs(q);
@@ -38,7 +43,7 @@ const getClassTeacherId = async (classId: string): Promise<string[]> => {
 
 export const createNotification = async (
     actionType: 'upload' | 'comment' | 'system',
-    actor: User & { id: string }, // Ensure actor has ID
+    actor: User & { id: string; group?: string }, // Ensure actor has ID and optional group
     resource: {
         type: 'office' | 'class' | 'group' | 'boarding';
         id?: string; // Resource ID (e.g., classId, planId)
@@ -51,7 +56,6 @@ export const createNotification = async (
         let receivers: string[] = [];
         const adminIds = await getAdminIds();
 
-        // --- RULE 1: OFFICE DOCUMENTS (VĂN PHÒNG) ---
         // --- RULE 1: OFFICE DOCUMENTS (VĂN PHÒNG) ---
         if (resource.type === 'office') {
             // Upload: Staff -> Admin only
@@ -93,21 +97,11 @@ export const createNotification = async (
         else if (resource.type === 'group') {
             // Head Teacher uploads Plan -> Admin + All Teachers in Group
             if (actionType === 'upload' && actor.role === 'head_teacher') {
-                // Assuming actor.group is available and correct
-                // If actor is Head Teacher, they might manage a group. 
-                // Let's assume we send to ALL teachers for now if group is generic, 
-                // or specific group if we can determine it.
-                // Requirement: "UID Admin] + [UID tất cả Giáo viên trong tổ"
-                // We will try to fetch teachers of the same group as the Head Teacher.
-                // If actor.group is undefined, maybe fetch all teachers? 
-                // Let's be safe and fetch based on actor.group if present.
-                const groupName = (actor as any).group;
-                if (groupName) {
-                    const groupTeacherIds = await getGroupTeacherIds(groupName);
+                if (actor.group) {
+                    const groupTeacherIds = await getGroupTeacherIds(actor.group);
                     receivers = [...adminIds, ...groupTeacherIds];
                 } else {
-                    // Fallback: Send to all teachers if no group specified? Or just Admins?
-                    // Let's send to Admins to be safe.
+                    // Fallback: If no group in actor profile (unexpected for Head Teacher), send to Admins
                     receivers = [...adminIds];
                 }
             }
@@ -115,10 +109,6 @@ export const createNotification = async (
 
         // --- RULE 4: BOARDING (BÁN TRÚ) ---
         else if (resource.type === 'boarding') {
-            // Similar to Office? Staff (Kitchen) -> Admin/Head Teacher?
-            // Requirement doesn't explicitly specify Boarding rules in the prompt summary 
-            // but implies "Staff (Y tế/Kế toán) tải file lên -> Admin".
-            // Let's treat it similar to Office for Staff.
             if (actor.role === 'staff') {
                 receivers = [...adminIds];
             }
@@ -135,10 +125,19 @@ export const createNotification = async (
             return;
         }
 
+        // Determine Sender Name
+        // Priority: Name -> Role Name -> Role Code
+        let finalSenderName = actor.name;
+
+        // If name is missing or looks like an internal role code, try to use Vietnamese Role Name
+        if (!finalSenderName || finalSenderName === actor.role || finalSenderName === 'head_teacher' || finalSenderName === 'vice_head_teacher') {
+            finalSenderName = ROLE_NAMES[actor.role] || actor.role;
+        }
+
         // Create Notification Object
         const notificationData = {
             senderId: actor.id,
-            senderName: actor.name || actor.role, // Fallback
+            senderName: finalSenderName,
             senderAvatar: actor.avatar || '',
             targetPath: resource.targetPath,
             message: `${actionType === 'upload' ? 'đã tải lên' : 'đã góp ý vào'} ${resource.name || 'tài liệu'}`,

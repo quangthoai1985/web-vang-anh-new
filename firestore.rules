@@ -80,11 +80,22 @@ service cloud.firestore {
       // CHẶN Staff - CHỈ Admin, Vice Principal, Head Teacher, Teacher được xem
       allow read: if isAdmin() || isVicePrincipal() || isHeadTeacher() || isViceHeadTeacher() || isTeacher() || isBootstrapAdmin();
       
-      // Write: Head Teacher toàn quyền, Teacher tạo và sửa/xóa của mình
+      // Create: Head Teacher, Vice Head Teacher, Teacher có thể tạo kế hoạch
       allow create: if isAdmin() || isHeadTeacher() || isViceHeadTeacher() || isTeacher() || isBootstrapAdmin();
-      allow update, delete: if isAdmin() || isHeadTeacher() || isViceHeadTeacher() || 
-                              (isTeacher() && resource.data.uploader == getUserData().fullName) || 
-                              isBootstrapAdmin();
+      
+      // Update: Cho phép cấp trên phê duyệt và người tạo sửa nội dung
+      allow update: if isAdmin() || isBootstrapAdmin() ||
+                      // Tổ trưởng/Tổ phó có full quyền update (bao gồm duyệt kế hoạch của GV)
+                      isHeadTeacher() || isViceHeadTeacher() ||
+                      // Phó Hiệu trưởng duyệt kế hoạch của Tổ trưởng/Tổ phó
+                      (isVicePrincipal() && resource.data.uploaderRole in ['head_teacher', 'vice_head_teacher']) ||
+                      // Teacher chỉ sửa kế hoạch của mình (không duyệt được)
+                      (isTeacher() && resource.data.uploader == getUserData().fullName);
+      
+      // Delete: Admin, Head Teacher, Vice Head Teacher, hoặc Teacher xóa của mình
+      allow delete: if isAdmin() || isHeadTeacher() || isViceHeadTeacher() || 
+                      (isTeacher() && resource.data.uploader == getUserData().fullName) || 
+                      isBootstrapAdmin();
     }
 
     // 5. DỮ LIỆU LỚP HỌC (classes)

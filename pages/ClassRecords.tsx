@@ -28,13 +28,16 @@ import {
    ZoomOut,
    CloudUpload,
    CheckCircle,
-   AlertCircle
+   AlertCircle,
+   Clock,
+   CheckCircle2,
+   XCircle
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useNotification } from '../context/NotificationContext';
 import { createNotification } from '../utils/notificationUtils';
 
-import { ClassFile, MonthFolder } from '../types';
+import { ClassFile, MonthFolder, ApprovalInfo, UserRole } from '../types';
 import { MOCK_FOLDERS } from '../data/mockData';
 
 // Helper function to get current school year
@@ -86,7 +89,7 @@ const WEEK_OPTIONS = [
    { value: '4', label: 'Tuần 4' },
 ];
 
-import { collection, query, where, onSnapshot, doc, getDoc, getDocs, deleteDoc, addDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, doc, getDoc, getDocs, deleteDoc, addDoc, serverTimestamp, updateDoc } from 'firebase/firestore';
 import { db, storage } from '../firebase';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { getPreviewUrl } from '../utils/fileUtils';
@@ -158,6 +161,84 @@ const ClassRecords: React.FC = () => {
    // Delete Modal State
    const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
    const [fileToDelete, setFileToDelete] = useState<{ file: ClassFile, folderId: string } | null>(null);
+
+   // Rejection Modal State for Approval
+   const [isRejectFileModalOpen, setIsRejectFileModalOpen] = useState(false);
+   const [fileToReject, setFileToReject] = useState<ClassFile | null>(null);
+   const [rejectionReason, setRejectionReason] = useState('');
+
+   // Kiểm tra quyền duyệt file (Tổ trưởng/Tổ phó duyệt file của giáo viên)
+   const canApproveFile = (file: any): boolean => {
+      if (!user) return false;
+
+      const uploaderRole = file.uploaderRole;
+      if (!uploaderRole) return false;
+
+      // Tổ trưởng + Tổ phó duyệt cho Giáo viên
+      if (['head_teacher', 'vice_head_teacher'].includes(user.role)) {
+         return uploaderRole === 'teacher';
+      }
+
+      return false;
+   };
+
+   // Xử lý duyệt file
+   const handleApproveFile = async (file: any) => {
+      if (!user) return;
+
+      try {
+         const docRef = doc(db, 'class_files', file.id);
+         await updateDoc(docRef, {
+            approval: {
+               status: 'approved',
+               reviewerId: user.id,
+               reviewerName: user.fullName,
+               reviewerRole: user.role,
+               reviewedAt: new Date().toISOString()
+            }
+         });
+
+         addToast("Đã duyệt hồ sơ", `Hồ sơ "${file.name}" đã được phê duyệt.`, "success");
+      } catch (error) {
+         console.error("Error approving file:", error);
+         addToast("Lỗi", "Không thể duyệt hồ sơ. Vui lòng thử lại.", "error");
+      }
+   };
+
+   // Mở modal từ chối file
+   const openRejectFileModal = (file: any, e: React.MouseEvent) => {
+      e.stopPropagation();
+      setFileToReject(file);
+      setRejectionReason('');
+      setIsRejectFileModalOpen(true);
+   };
+
+   // Xử lý từ chối file
+   const handleRejectFile = async () => {
+      if (!user || !fileToReject) return;
+
+      try {
+         const docRef = doc(db, 'class_files', fileToReject.id);
+         await updateDoc(docRef, {
+            approval: {
+               status: 'rejected',
+               reviewerId: user.id,
+               reviewerName: user.fullName,
+               reviewerRole: user.role,
+               reviewedAt: new Date().toISOString(),
+               rejectionReason: rejectionReason || 'Không đạt yêu cầu'
+            }
+         });
+
+         addToast("Đã từ chối hồ sơ", `Hồ sơ "${fileToReject.name}" đã bị từ chối.`, "warning");
+         setIsRejectFileModalOpen(false);
+         setFileToReject(null);
+         setRejectionReason('');
+      } catch (error) {
+         console.error("Error rejecting file:", error);
+         addToast("Lỗi", "Không thể từ chối hồ sơ. Vui lòng thử lại.", "error");
+      }
+   };
 
    // Fetch Class Details
    useEffect(() => {
@@ -469,6 +550,7 @@ const ClassRecords: React.FC = () => {
             type: uploadFile.name.split('.').pop()?.toLowerCase() || 'other',
             url: downloadUrl,
             uploader: user.fullName,
+            uploaderRole: user.role, // Lưu vai trò người upload
             date: new Date().toISOString(),
             classId: classId,
             month: uploadFormData.month,
@@ -478,7 +560,11 @@ const ClassRecords: React.FC = () => {
             createdAt: serverTimestamp(),
             planType: uploadFormData.planType,
             week: uploadFormData.week,
-            category: uploadFormData.area // Save the area as category
+            category: uploadFormData.area, // Save the area as category
+            // Trạng thái phê duyệt mặc định là "Chờ duyệt"
+            approval: {
+               status: 'pending'
+            }
          };
 
          await addDoc(collection(db, 'class_files'), newFile);
@@ -833,9 +919,27 @@ const ClassRecords: React.FC = () => {
                                                 <div className="flex items-center gap-3">
                                                    {getFileIcon(file.type)}
                                                    <div>
-                                                      <h4 className="text-sm font-medium text-gray-800 group-hover:text-amber-700">
-                                                         {file.name}
-                                                      </h4>
+                                                      <div className="flex items-center gap-2">
+                                                         <h4 className="text-sm font-medium text-gray-800 group-hover:text-amber-700">
+                                                            {file.name}
+                                                         </h4>
+                                                         {/* Approval Status Badge */}
+                                                         {file.approval?.status === 'pending' && (
+                                                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-amber-100 text-amber-700">
+                                                               <Clock className="h-2.5 w-2.5" /> Chờ duyệt
+                                                            </span>
+                                                         )}
+                                                         {file.approval?.status === 'approved' && (
+                                                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-green-100 text-green-700">
+                                                               <CheckCircle2 className="h-2.5 w-2.5" /> Đã duyệt
+                                                            </span>
+                                                         )}
+                                                         {file.approval?.status === 'rejected' && (
+                                                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-red-100 text-red-700" title={file.approval.rejectionReason}>
+                                                               <XCircle className="h-2.5 w-2.5" /> Từ chối
+                                                            </span>
+                                                         )}
+                                                      </div>
                                                       <div className="flex items-center gap-2 text-xs text-gray-500">
                                                          <Calendar className="h-3 w-3" /> {new Date(file.date).toLocaleDateString('vi-VN')}
                                                          {/* Show Week badge if in Week view */}
@@ -845,10 +949,33 @@ const ClassRecords: React.FC = () => {
                                                             </span>
                                                          )}
                                                       </div>
+                                                      {/* Show rejection reason if rejected */}
+                                                      {file.approval?.status === 'rejected' && file.approval.rejectionReason && (
+                                                         <div className="mt-1 text-[10px] text-red-600">
+                                                            <span className="font-semibold">Lý do:</span> {file.approval.rejectionReason}
+                                                         </div>
+                                                      )}
                                                    </div>
                                                 </div>
 
                                                 <div className="flex items-center gap-2">
+                                                   {/* Approval Buttons */}
+                                                   {canApproveFile(file) && file.approval?.status === 'pending' && (
+                                                      <div className="flex items-center gap-1">
+                                                         <button
+                                                            onClick={(e) => { e.stopPropagation(); handleApproveFile(file); }}
+                                                            className="px-2 py-1 text-[9px] font-bold text-white bg-green-500 hover:bg-green-600 rounded transition-colors flex items-center gap-0.5"
+                                                         >
+                                                            <CheckCircle2 className="h-3 w-3" /> Duyệt
+                                                         </button>
+                                                         <button
+                                                            onClick={(e) => openRejectFileModal(file, e)}
+                                                            className="px-2 py-1 text-[9px] font-bold text-white bg-red-500 hover:bg-red-600 rounded transition-colors flex items-center gap-0.5"
+                                                         >
+                                                            <XCircle className="h-3 w-3" /> Từ chối
+                                                         </button>
+                                                      </div>
+                                                   )}
                                                    {file.hasNewComments && (
                                                       <span className="flex items-center gap-1 px-2 py-1 rounded-full bg-red-100 text-red-600 text-[10px] font-bold animate-pulse">
                                                          <MessageCircle className="h-3 w-3" />
@@ -1148,6 +1275,52 @@ const ClassRecords: React.FC = () => {
                            className="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 shadow-md transition-colors"
                         >
                            Xóa vĩnh viễn
+                        </button>
+                     </div>
+                  </div>
+               </div>
+            </div>
+         )}
+
+         {/* Rejection Confirmation Modal */}
+         {isRejectFileModalOpen && fileToReject && (
+            <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
+               <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200">
+                  <div className="p-6">
+                     <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <XCircle className="h-8 w-8 text-red-600" />
+                     </div>
+                     <h3 className="text-lg font-bold text-gray-900 mb-2 text-center">Xác nhận từ chối hồ sơ?</h3>
+                     <p className="text-sm text-gray-500 mb-4 text-center">
+                        Bạn sắp từ chối hồ sơ <span className="font-semibold text-gray-800">"{fileToReject.name}"</span>
+                     </p>
+
+                     <div className="mb-4">
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                           Lý do từ chối <span className="text-red-500">*</span>
+                        </label>
+                        <textarea
+                           className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-red-500 focus:border-red-500 outline-none transition-all resize-none"
+                           rows={3}
+                           placeholder="Nhập lý do từ chối để giáo viên biết cần chỉnh sửa gì..."
+                           value={rejectionReason}
+                           onChange={(e) => setRejectionReason(e.target.value)}
+                        />
+                     </div>
+
+                     <div className="flex gap-3 justify-center">
+                        <button
+                           onClick={() => { setIsRejectFileModalOpen(false); setFileToReject(null); }}
+                           className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+                        >
+                           Hủy bỏ
+                        </button>
+                        <button
+                           onClick={handleRejectFile}
+                           disabled={!rejectionReason.trim()}
+                           className="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 shadow-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                           Xác nhận từ chối
                         </button>
                      </div>
                   </div>

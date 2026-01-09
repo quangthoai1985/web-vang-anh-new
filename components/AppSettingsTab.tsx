@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { db, storage } from '../firebase';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc, collection, getDocs, updateDoc, writeBatch } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { Upload, Image as ImageIcon, RefreshCcw, Check, AlertCircle } from 'lucide-react';
+import { Upload, Image as ImageIcon, RefreshCcw, Check, AlertCircle, Database, Loader2 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useNotification } from '../context/NotificationContext';
 
@@ -27,6 +27,76 @@ const AppSettingsTab: React.FC = () => {
     const [file, setFile] = useState<File | null>(null);
     const [uploading, setUploading] = useState(false);
     const [loading, setLoading] = useState(true);
+
+    // Migration State
+    const [isMigrating, setIsMigrating] = useState(false);
+    const [migrationResult, setMigrationResult] = useState<{ plans: number; classFiles: number } | null>(null);
+
+    // Migration function to add approval fields to existing documents
+    const handleMigrateApprovalFields = async () => {
+        if (!user) return;
+
+        setIsMigrating(true);
+        setMigrationResult(null);
+
+        try {
+            let plansUpdated = 0;
+            let classFilesUpdated = 0;
+
+            // Migrate 'plans' collection
+            const plansSnapshot = await getDocs(collection(db, 'plans'));
+            const plansBatch = writeBatch(db);
+
+            plansSnapshot.forEach((docSnapshot) => {
+                const data = docSnapshot.data();
+                if (!data.approval || !data.approval.status) {
+                    const docRef = doc(db, 'plans', docSnapshot.id);
+                    plansBatch.update(docRef, {
+                        approval: { status: 'pending' },
+                        uploaderRole: data.uploaderRole || 'teacher'
+                    });
+                    plansUpdated++;
+                }
+            });
+
+            if (plansUpdated > 0) {
+                await plansBatch.commit();
+            }
+
+            // Migrate 'class_files' collection
+            const classFilesSnapshot = await getDocs(collection(db, 'class_files'));
+            const classFilesBatch = writeBatch(db);
+
+            classFilesSnapshot.forEach((docSnapshot) => {
+                const data = docSnapshot.data();
+                if (!data.approval || !data.approval.status) {
+                    const docRef = doc(db, 'class_files', docSnapshot.id);
+                    classFilesBatch.update(docRef, {
+                        approval: { status: 'pending' },
+                        uploaderRole: data.uploaderRole || 'teacher'
+                    });
+                    classFilesUpdated++;
+                }
+            });
+
+            if (classFilesUpdated > 0) {
+                await classFilesBatch.commit();
+            }
+
+            setMigrationResult({ plans: plansUpdated, classFiles: classFilesUpdated });
+
+            if (plansUpdated > 0 || classFilesUpdated > 0) {
+                addToast('Migration hoàn thành!', `Đã cập nhật ${plansUpdated} kế hoạch và ${classFilesUpdated} hồ sơ lớp.`, 'success');
+            } else {
+                addToast('Không có gì để cập nhật', 'Tất cả tài liệu đã có trạng thái duyệt.', 'success');
+            }
+        } catch (error) {
+            console.error('Migration error:', error);
+            addToast('Lỗi Migration', 'Không thể cập nhật dữ liệu. Xem console để biết chi tiết.', 'error');
+        } finally {
+            setIsMigrating(false);
+        }
+    };
 
     // Fetch settings
     useEffect(() => {
@@ -250,6 +320,53 @@ const AppSettingsTab: React.FC = () => {
 
     return (
         <div className="space-y-8">
+            {/* --- DATA MIGRATION SECTION --- */}
+            <div className="space-y-6">
+                <div className="bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 rounded-xl p-6">
+                    <div className="flex items-start gap-4">
+                        <div className="p-3 bg-amber-600 rounded-lg">
+                            <Database className="h-6 w-6 text-white" />
+                        </div>
+                        <div className="flex-1">
+                            <h2 className="text-xl font-bold text-gray-900 mb-2">Migration: Thêm Trạng Thái Duyệt</h2>
+                            <p className="text-sm text-gray-600 mb-4">
+                                Cập nhật các tài liệu cũ (Kế hoạch Tổ CM và Hồ sơ Lớp) với trạng thái "Chờ duyệt" để kích hoạt chức năng phê duyệt mới.
+                                <br />
+                                <span className="text-amber-700 font-medium">Lưu ý: Chỉ cần chạy một lần. Các tài liệu đã có trạng thái sẽ không bị ảnh hưởng.</span>
+                            </p>
+
+                            <div className="flex items-center gap-4">
+                                <button
+                                    onClick={handleMigrateApprovalFields}
+                                    disabled={isMigrating}
+                                    className="flex items-center gap-2 px-6 py-2.5 bg-amber-600 text-white rounded-lg hover:bg-amber-700 disabled:opacity-50 disabled:cursor-not-allowed shadow-md hover:shadow-lg transition-all transform hover:-translate-y-0.5"
+                                >
+                                    {isMigrating ? (
+                                        <>
+                                            <Loader2 className="h-4 w-4 animate-spin" />
+                                            Đang xử lý...
+                                        </>
+                                    ) : (
+                                        <>
+                                            <Database className="h-4 w-4" />
+                                            Chạy Migration
+                                        </>
+                                    )}
+                                </button>
+
+                                {migrationResult && (
+                                    <div className="text-sm text-green-700 bg-green-100 px-3 py-1.5 rounded-lg border border-green-200">
+                                        ✅ Đã cập nhật: <span className="font-bold">{migrationResult.plans}</span> kế hoạch, <span className="font-bold">{migrationResult.classFiles}</span> hồ sơ lớp
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <hr className="border-gray-200" />
+
             {/* --- LOGO SETTINGS --- */}
             <div className="space-y-6">
                 <div className="bg-gradient-to-r from-indigo-50 to-purple-50 border border-indigo-100 rounded-xl p-6">

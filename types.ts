@@ -14,6 +14,19 @@ export interface DashboardCardData {
 // Updated Roles based on requirements
 export type UserRole = 'admin' | 'vice_principal' | 'head_teacher' | 'vice_head_teacher' | 'teacher' | 'staff' | 'office_head';
 
+// Trạng thái phê duyệt kế hoạch
+export type ApprovalStatus = 'pending' | 'approved' | 'rejected';
+
+// Chi tiết phê duyệt - lưu vào kế hoạch
+export interface ApprovalInfo {
+  status: ApprovalStatus;
+  reviewerId?: string;      // ID người duyệt
+  reviewerName?: string;    // Tên người duyệt
+  reviewerRole?: UserRole;  // Vai trò người duyệt
+  reviewedAt?: string;      // Thời điểm duyệt (ISO String)
+  rejectionReason?: string; // Lý do từ chối (nếu rejected)
+}
+
 export interface User {
   name: string;
   avatar: string;

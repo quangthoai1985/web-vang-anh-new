@@ -20,9 +20,10 @@ import {
    Filter,
    CloudUpload,
    CheckCircle,
-   Maximize2
+   Maximize2,
+   XCircle
 } from 'lucide-react';
-import { Comment } from '../types';
+import { Comment, ApprovalInfo, UserRole } from '../types';
 import { useAuth } from '../context/AuthContext';
 import { useNotification } from '../context/NotificationContext';
 import { db } from '../firebase';
@@ -32,25 +33,30 @@ import { storage } from '../firebase';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { getPreviewUrl } from '../utils/fileUtils';
 
-// --- Mock Data specific to this page ---
+// --- Interfaces for this page ---
 interface GroupPlan {
    id: string;
    title: string;
    uploader: string;
+   uploaderRole: UserRole; // Vai trò người upload để xác định ai được duyệt
    uploadDate: string;
    viewers: string[]; // Array of avatar/initials
    commentCount: number;
    type: 'plan';
+   approval?: ApprovalInfo; // Thông tin phê duyệt
 }
 
 interface MeetingMinute {
    id: string;
    date: string; // For timeline
    title: string;
+   uploader: string;
+   uploaderRole: UserRole;
    fileType: 'word' | 'pdf';
    status: 'finalized' | 'draft'; // Đã chốt | Đang thảo luận
    type: 'minute';
    comments: Comment[];
+   approval?: ApprovalInfo; // Thông tin phê duyệt
 }
 
 
@@ -110,8 +116,90 @@ const ProfessionalGroupPlans: React.FC = () => {
    const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
    const [itemToDelete, setItemToDelete] = useState<GroupPlan | MeetingMinute | null>(null);
 
+   // Rejection Modal State
+   const [isRejectModalOpen, setIsRejectModalOpen] = useState(false);
+   const [itemToReject, setItemToReject] = useState<GroupPlan | MeetingMinute | null>(null);
+   const [rejectionReason, setRejectionReason] = useState('');
+
    // Permission Check for Upload Button
-   const canUpload = user?.role === 'head_teacher' || user?.role === 'teacher';
+   const canUpload = user?.role === 'head_teacher' || user?.role === 'vice_head_teacher' || user?.role === 'teacher';
+
+   // Kiểm tra quyền duyệt kế hoạch
+   const canApprove = (item: GroupPlan | MeetingMinute): boolean => {
+      if (!user) return false;
+
+      const uploaderRole = item.uploaderRole;
+      if (!uploaderRole) return false;
+
+      // Phó Hiệu trưởng duyệt cho Tổ trưởng + Tổ phó
+      if (user.role === 'vice_principal') {
+         return ['head_teacher', 'vice_head_teacher'].includes(uploaderRole);
+      }
+
+      // Tổ trưởng + Tổ phó duyệt cho Giáo viên
+      if (['head_teacher', 'vice_head_teacher'].includes(user.role)) {
+         return uploaderRole === 'teacher';
+      }
+
+      return false;
+   };
+
+   // Xử lý duyệt kế hoạch
+   const handleApprove = async (item: GroupPlan | MeetingMinute) => {
+      if (!user) return;
+
+      try {
+         const docRef = doc(db, 'plans', item.id);
+         await updateDoc(docRef, {
+            approval: {
+               status: 'approved',
+               reviewerId: user.id,
+               reviewerName: user.fullName,
+               reviewerRole: user.role,
+               reviewedAt: new Date().toISOString()
+            }
+         });
+
+         addToast("Đã duyệt kế hoạch", `Kế hoạch "${item.title}" đã được phê duyệt.`, "success");
+      } catch (error) {
+         console.error("Error approving plan:", error);
+         addToast("Lỗi", "Không thể duyệt kế hoạch. Vui lòng thử lại.", "error");
+      }
+   };
+
+   // Mở modal từ chối
+   const openRejectModal = (item: GroupPlan | MeetingMinute) => {
+      setItemToReject(item);
+      setRejectionReason('');
+      setIsRejectModalOpen(true);
+   };
+
+   // Xử lý từ chối kế hoạch
+   const handleReject = async () => {
+      if (!user || !itemToReject) return;
+
+      try {
+         const docRef = doc(db, 'plans', itemToReject.id);
+         await updateDoc(docRef, {
+            approval: {
+               status: 'rejected',
+               reviewerId: user.id,
+               reviewerName: user.fullName,
+               reviewerRole: user.role,
+               reviewedAt: new Date().toISOString(),
+               rejectionReason: rejectionReason || 'Không đạt yêu cầu'
+            }
+         });
+
+         addToast("Đã từ chối kế hoạch", `Kế hoạch "${itemToReject.title}" đã bị từ chối.`, "warning");
+         setIsRejectModalOpen(false);
+         setItemToReject(null);
+         setRejectionReason('');
+      } catch (error) {
+         console.error("Error rejecting plan:", error);
+         addToast("Lỗi", "Không thể từ chối kế hoạch. Vui lòng thử lại.", "error");
+      }
+   };
 
    // Scroll to bottom of chat
    useEffect(() => {
@@ -242,12 +330,17 @@ const ProfessionalGroupPlans: React.FC = () => {
             ...uploadFormData,
             title: uploadFormData.name, // Map name to title
             uploader: user?.fullName || 'Ẩn danh',
+            uploaderRole: user?.role || 'teacher', // Lưu vai trò người upload
             uploadDate: new Date().toISOString(),
             viewers: [],
             commentCount: 0,
             comments: [],
             fileType: fileType,
-            url: downloadUrl
+            url: downloadUrl,
+            // Trạng thái phê duyệt mặc định là "Chờ duyệt"
+            approval: {
+               status: 'pending'
+            }
          };
 
          await addDoc(collection(db, 'plans'), newItem);
@@ -393,9 +486,27 @@ const ProfessionalGroupPlans: React.FC = () => {
                                  <FileText className="h-6 w-6" />
                               </div>
                               <div>
-                                 <h3 className="text-base font-bold text-gray-900 group-hover:text-orange-700 transition-colors">
-                                    {plan.title}
-                                 </h3>
+                                 <div className="flex items-center gap-2">
+                                    <h3 className="text-base font-bold text-gray-900 group-hover:text-orange-700 transition-colors">
+                                       {plan.title}
+                                    </h3>
+                                    {/* Approval Status Badge */}
+                                    {plan.approval?.status === 'pending' && (
+                                       <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-700 uppercase">
+                                          <Clock className="h-3 w-3" /> Chờ duyệt
+                                       </span>
+                                    )}
+                                    {plan.approval?.status === 'approved' && (
+                                       <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-green-100 text-green-700 uppercase">
+                                          <CheckCircle2 className="h-3 w-3" /> Đã duyệt
+                                       </span>
+                                    )}
+                                    {plan.approval?.status === 'rejected' && (
+                                       <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-100 text-red-700 uppercase" title={plan.approval.rejectionReason}>
+                                          <XCircle className="h-3 w-3" /> Từ chối
+                                       </span>
+                                    )}
+                                 </div>
                                  <div className="flex items-center gap-3 mt-1 text-xs text-gray-500">
                                     <span className="flex items-center gap-1">
                                        <Users className="h-3 w-3" /> {plan.uploader}
@@ -405,11 +516,34 @@ const ProfessionalGroupPlans: React.FC = () => {
                                        <Clock className="h-3 w-3" /> {new Date(plan.uploadDate).toLocaleDateString('vi-VN')}
                                     </span>
                                  </div>
+                                 {/* Show rejection reason if rejected */}
+                                 {plan.approval?.status === 'rejected' && plan.approval.rejectionReason && (
+                                    <div className="mt-2 text-xs text-red-600 bg-red-50 px-2 py-1 rounded">
+                                       <span className="font-semibold">Lý do:</span> {plan.approval.rejectionReason}
+                                    </div>
+                                 )}
                               </div>
                            </div>
 
                            {/* Interaction Column */}
                            <div className="flex items-center gap-4">
+                              {/* Approval Buttons - Only show for users who can approve and item is pending */}
+                              {canApprove(plan) && plan.approval?.status === 'pending' && (
+                                 <div className="flex items-center gap-1">
+                                    <button
+                                       onClick={(e) => { e.stopPropagation(); handleApprove(plan); }}
+                                       className="px-3 py-1.5 text-xs font-bold text-white bg-green-500 hover:bg-green-600 rounded-lg transition-colors shadow-sm flex items-center gap-1"
+                                    >
+                                       <CheckCircle2 className="h-3.5 w-3.5" /> Duyệt
+                                    </button>
+                                    <button
+                                       onClick={(e) => { e.stopPropagation(); openRejectModal(plan); }}
+                                       className="px-3 py-1.5 text-xs font-bold text-white bg-red-500 hover:bg-red-600 rounded-lg transition-colors shadow-sm flex items-center gap-1"
+                                    >
+                                       <XCircle className="h-3.5 w-3.5" /> Từ chối
+                                    </button>
+                                 </div>
+                              )}
                               <div className="flex -space-x-2">
                                  {plan.viewers.map((v, idx) => (
                                     <div key={idx} className="h-8 w-8 rounded-full bg-gray-200 border-2 border-white flex items-center justify-center text-xs font-medium text-gray-600">
@@ -480,7 +614,7 @@ const ProfessionalGroupPlans: React.FC = () => {
                            className="bg-white rounded-lg border border-gray-200 p-4 hover:border-orange-300 hover:shadow-md transition-all cursor-pointer group relative pr-10"
                         >
                            <div className="flex justify-between items-start mb-2">
-                              <div className="flex items-center gap-2">
+                              <div className="flex items-center gap-2 flex-wrap">
                                  {minute.status === 'finalized' ? (
                                     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-green-100 text-green-700 uppercase">
                                        <CheckCircle2 className="h-3 w-3" /> Đã chốt
@@ -490,12 +624,52 @@ const ProfessionalGroupPlans: React.FC = () => {
                                        <AlertCircle className="h-3 w-3" /> Đang thảo luận
                                     </span>
                                  )}
+                                 {/* Approval Status Badge */}
+                                 {minute.approval?.status === 'pending' && (
+                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-600 border border-amber-200">
+                                       <Clock className="h-3 w-3" /> Chờ duyệt
+                                    </span>
+                                 )}
+                                 {minute.approval?.status === 'approved' && (
+                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-green-50 text-green-600 border border-green-200">
+                                       <CheckCircle2 className="h-3 w-3" /> Đã duyệt
+                                    </span>
+                                 )}
+                                 {minute.approval?.status === 'rejected' && (
+                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-50 text-red-600 border border-red-200" title={minute.approval.rejectionReason}>
+                                       <XCircle className="h-3 w-3" /> Từ chối
+                                    </span>
+                                 )}
                               </div>
+                              {/* Approval Buttons for Minutes */}
+                              {canApprove(minute) && minute.approval?.status === 'pending' && (
+                                 <div className="flex items-center gap-1">
+                                    <button
+                                       onClick={(e) => { e.stopPropagation(); handleApprove(minute); }}
+                                       className="px-2 py-1 text-[10px] font-bold text-white bg-green-500 hover:bg-green-600 rounded transition-colors flex items-center gap-0.5"
+                                    >
+                                       <CheckCircle2 className="h-3 w-3" /> Duyệt
+                                    </button>
+                                    <button
+                                       onClick={(e) => { e.stopPropagation(); openRejectModal(minute); }}
+                                       className="px-2 py-1 text-[10px] font-bold text-white bg-red-500 hover:bg-red-600 rounded transition-colors flex items-center gap-0.5"
+                                    >
+                                       <XCircle className="h-3 w-3" /> Từ chối
+                                    </button>
+                                 </div>
+                              )}
                            </div>
 
                            <h3 className="text-sm font-bold text-gray-900 mb-3 group-hover:text-orange-700">
                               {minute.title}
                            </h3>
+
+                           {/* Show rejection reason if rejected */}
+                           {minute.approval?.status === 'rejected' && minute.approval.rejectionReason && (
+                              <div className="mb-3 text-xs text-red-600 bg-red-50 px-2 py-1 rounded">
+                                 <span className="font-semibold">Lý do:</span> {minute.approval.rejectionReason}
+                              </div>
+                           )}
 
                            <div className="flex items-center justify-between">
                               <div className="flex items-center gap-2 p-2 bg-gray-50 rounded border border-gray-100 group-hover:bg-orange-50 group-hover:border-orange-100 transition-colors">
@@ -556,6 +730,52 @@ const ProfessionalGroupPlans: React.FC = () => {
                            className="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 shadow-md transition-colors"
                         >
                            Xóa vĩnh viễn
+                        </button>
+                     </div>
+                  </div>
+               </div>
+            </div>
+         )}
+
+         {/* Rejection Confirmation Modal */}
+         {isRejectModalOpen && itemToReject && (
+            <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
+               <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200">
+                  <div className="p-6">
+                     <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <XCircle className="h-8 w-8 text-red-600" />
+                     </div>
+                     <h3 className="text-lg font-bold text-gray-900 mb-2 text-center">Xác nhận từ chối kế hoạch?</h3>
+                     <p className="text-sm text-gray-500 mb-4 text-center">
+                        Bạn sắp từ chối kế hoạch <span className="font-semibold text-gray-800">"{itemToReject.title}"</span>
+                     </p>
+
+                     <div className="mb-4">
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                           Lý do từ chối <span className="text-red-500">*</span>
+                        </label>
+                        <textarea
+                           className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-red-500 focus:border-red-500 outline-none transition-all resize-none"
+                           rows={3}
+                           placeholder="Nhập lý do từ chối để người gửi biết cần chỉnh sửa gì..."
+                           value={rejectionReason}
+                           onChange={(e) => setRejectionReason(e.target.value)}
+                        />
+                     </div>
+
+                     <div className="flex gap-3 justify-center">
+                        <button
+                           onClick={() => { setIsRejectModalOpen(false); setItemToReject(null); }}
+                           className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+                        >
+                           Hủy bỏ
+                        </button>
+                        <button
+                           onClick={handleReject}
+                           disabled={!rejectionReason.trim()}
+                           className="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 shadow-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                           Xác nhận từ chối
                         </button>
                      </div>
                   </div>
