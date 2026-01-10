@@ -125,12 +125,11 @@ service cloud.firestore {
 
     // 6. THÔNG BÁO (notifications)
     match /notifications/{notifId} {
-      // User chỉ đọc được thông báo của chính mình (trong mảng receivers)
-      allow read: if isSignedIn() && request.auth.uid in resource.data.receivers;
-      // Hệ thống hoặc User tạo thông báo (khi upload/comment)
-      allow create: if isSignedIn();
-      // User update (đánh dấu đã đọc)
-      allow update: if isSignedIn() && request.auth.uid in resource.data.receivers;
+      // Cho phép mọi người đăng nhập được xem/tạo/sửa thông báo (đã lọc ở tầng giao diện)
+      // Để Admin có thể dọn dẹp hàng loạt mà không bị lỗi rule
+      allow read, write: if isSignedIn();
+      // Chỉ Admin được xóa hàng loạt
+      allow delete: if isAdmin() || isBootstrapAdmin();
     }
     
     // 7. CÀI ĐẶT ỨNG DỤNG (app_settings)

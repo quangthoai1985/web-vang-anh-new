@@ -90,8 +90,8 @@ export const createNotification = async (
                 if (resource.extraInfo?.uploaderId) {
                     receivers = [resource.extraInfo.uploaderId];
                 }
-                // Fallback: If Admin/HT comments and no specific target, send to all class teachers
-                else if (actor.role === 'admin' || actor.role === 'head_teacher') {
+                // Fallback: If Admin/HT/Vice-HT comments and no specific target, send to all class teachers
+                else if (actor.role === 'admin' || actor.role === 'head_teacher' || actor.role === 'vice_head_teacher') {
                     if (classId) {
                         const teacherIds = await getClassTeacherId(classId);
                         receivers = [...teacherIds];

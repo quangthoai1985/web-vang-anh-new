@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { db, storage } from '../firebase';
 import { doc, getDoc, setDoc, collection, getDocs, updateDoc, writeBatch } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { Upload, Image as ImageIcon, RefreshCcw, Check, AlertCircle, Database, Loader2 } from 'lucide-react';
+import { Upload, Image as ImageIcon, RefreshCcw, Check, AlertCircle, Database, Loader2, Trash2 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useNotification } from '../context/NotificationContext';
 
@@ -31,6 +31,8 @@ const AppSettingsTab: React.FC = () => {
     // Migration State
     const [isMigrating, setIsMigrating] = useState(false);
     const [migrationResult, setMigrationResult] = useState<{ plans: number; classFiles: number } | null>(null);
+    const [isCleaning, setIsCleaning] = useState(false);
+    const [cleanupResult, setCleanupResult] = useState<number | null>(null);
 
     // Migration function to add approval fields to existing documents
     const handleMigrateApprovalFields = async () => {
@@ -95,6 +97,58 @@ const AppSettingsTab: React.FC = () => {
             addToast('Lỗi Migration', 'Không thể cập nhật dữ liệu. Xem console để biết chi tiết.', 'error');
         } finally {
             setIsMigrating(false);
+        }
+    };
+
+    // Cleanup function to delete notifications with old paths
+    const handleCleanupOldNotifications = async () => {
+        if (!user || !window.confirm('Bạn có chắc muốn xóa tất cả thông báo cũ có đường dẫn sai (/professional-group-plans)?')) return;
+
+        setIsCleaning(true);
+        setCleanupResult(null);
+
+        try {
+            let deletedCount = 0;
+            const notificationsSnapshot = await getDocs(collection(db, 'notifications'));
+
+            // Filter notifications to delete
+            const toDelete: string[] = [];
+            notificationsSnapshot.forEach((docSnapshot) => {
+                const data = docSnapshot.data();
+                if (data.targetPath && data.targetPath.includes('/professional-group-plans')) {
+                    toDelete.push(docSnapshot.id);
+                }
+            });
+
+            if (toDelete.length > 0) {
+                // Chunk into batches of 450 (Firestore limit is 500)
+                const chunkSize = 450;
+                for (let i = 0; i < toDelete.length; i += chunkSize) {
+                    const chunk = toDelete.slice(i, i + chunkSize);
+                    const batch = writeBatch(db);
+
+                    chunk.forEach(id => {
+                        batch.delete(doc(db, 'notifications', id));
+                    });
+
+                    await batch.commit();
+                    deletedCount += chunk.length;
+                    console.log(`Deleted chunk: ${deletedCount}/${toDelete.length}`);
+                }
+
+                addToast('Dọn dẹp hoàn tất!', `Đã xóa ${deletedCount} thông báo cũ sai đường dẫn.`, 'success');
+            } else {
+                addToast('Không có thông báo lỗi', 'Tất cả thông báo hiện tại đều hợp lệ.', 'success');
+            }
+            setCleanupResult(deletedCount);
+        } catch (error: any) {
+            console.error('Cleanup error details:', error);
+            const errorMessage = error.code === 'permission-denied'
+                ? 'Lỗi dọn dẹp: Quyền truy cập bị từ chối. Vui lòng kiểm tra lại quyền Admin.'
+                : `Lỗi dọn dẹp: ${error.message || 'Không thể xóa dữ liệu cũ.'}`;
+            addToast('Lỗi', errorMessage, 'error');
+        } finally {
+            setIsCleaning(false);
         }
     };
 
@@ -332,7 +386,7 @@ const AppSettingsTab: React.FC = () => {
                             <p className="text-sm text-gray-600 mb-4">
                                 Cập nhật các tài liệu cũ (Kế hoạch Tổ CM và Hồ sơ Lớp) với trạng thái "Chờ duyệt" để kích hoạt chức năng phê duyệt mới.
                                 <br />
-                                <span className="text-amber-700 font-medium">Lưu ý: Chỉ cần chạy một lần. Các tài liệu đã có trạng thái sẽ không bị ảnh hưởng.</span>
+                                <span className="text-amber-700 font-medium font-sans">Lưu ý: Chỉ cần chạy một lần. Các tài liệu đã có trạng thái sẽ không bị ảnh hưởng.</span>
                             </p>
 
                             <div className="flex items-center gap-4">
@@ -357,6 +411,49 @@ const AppSettingsTab: React.FC = () => {
                                 {migrationResult && (
                                     <div className="text-sm text-green-700 bg-green-100 px-3 py-1.5 rounded-lg border border-green-200">
                                         ✅ Đã cập nhật: <span className="font-bold">{migrationResult.plans}</span> kế hoạch, <span className="font-bold">{migrationResult.classFiles}</span> hồ sơ lớp
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                {/* --- NOTIFICATION CLEANUP SECTION --- */}
+                <div className="bg-gradient-to-r from-red-50 to-rose-50 border border-red-200 rounded-xl p-6">
+                    <div className="flex items-start gap-4">
+                        <div className="p-3 bg-red-600 rounded-lg">
+                            <RefreshCcw className="h-6 w-6 text-white" />
+                        </div>
+                        <div className="flex-1">
+                            <h2 className="text-xl font-bold text-gray-900 mb-2">Dọn dẹp: Thông báo lỗi đường dẫn</h2>
+                            <p className="text-sm text-gray-600 mb-4">
+                                Khắc phục vấn đề "Trang trắng" khi nhấn vào thông báo cũ.
+                                <br />
+                                <span className="text-red-700 font-medium font-sans">Dọn sạch các thông báo chứa đường dẫn cũ (/professional-group-plans).</span>
+                            </p>
+
+                            <div className="flex items-center gap-4">
+                                <button
+                                    onClick={handleCleanupOldNotifications}
+                                    disabled={isCleaning}
+                                    className="flex items-center gap-2 px-6 py-2.5 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed shadow-md hover:shadow-lg transition-all transform hover:-translate-y-0.5"
+                                >
+                                    {isCleaning ? (
+                                        <>
+                                            <Loader2 className="h-4 w-4 animate-spin" />
+                                            Đang dọn dẹp...
+                                        </>
+                                    ) : (
+                                        <>
+                                            <Trash2 className="h-4 w-4" />
+                                            Dọn dẹp thông báo lỗi
+                                        </>
+                                    )}
+                                </button>
+
+                                {cleanupResult !== null && (
+                                    <div className="text-sm text-red-700 bg-red-100 px-3 py-1.5 rounded-lg border border-red-200">
+                                        🗑️ Đã xóa: <span className="font-bold">{cleanupResult}</span> thông báo lỗi
                                     </div>
                                 )}
                             </div>
@@ -658,7 +755,7 @@ const AppSettingsTab: React.FC = () => {
                     </div>
                 </div>
             </div>
-        </div>
+        </div >
     );
 };
 

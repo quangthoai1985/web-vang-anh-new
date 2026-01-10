@@ -33,6 +33,7 @@ import {
    CheckCircle2,
    XCircle,
    Edit3,
+   MessageSquare,
    AlertTriangle // Import AlertTriangle
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
@@ -91,7 +92,7 @@ const WEEK_OPTIONS = [
    { value: '4', label: 'Tuần 4' },
 ];
 
-import { collection, query, where, onSnapshot, doc, getDoc, getDocs, deleteDoc, addDoc, serverTimestamp, updateDoc, arrayUnion } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, doc, getDoc, getDocs, deleteDoc, addDoc, serverTimestamp, updateDoc, arrayUnion, deleteField } from 'firebase/firestore';
 import { db, storage } from '../firebase';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { getPreviewUrl } from '../utils/fileUtils';
@@ -325,18 +326,55 @@ const ClassRecords: React.FC = () => {
          const currentComments = (selectedFile as any).comments || [];
          const updatedComments = currentComments.filter((c: Comment) => c.id !== commentToDelete.id);
 
-         await updateDoc(fileRef, {
+         const updateData: any = {
             comments: updatedComments,
-            commentCount: Math.max(0, (selectedFile.commentCount || 0) - 1),
+            commentCount: updatedComments.length,
             hasNewComments: updatedComments.length > 0
-         });
+         };
 
-         // Update local state
+         // Special Logic: If deleting a 'request', revert status to pending
+         let newApprovalStatus = (selectedFile as any).approval?.status;
+         let newRejectionReason = (selectedFile as any).approval?.rejectionReason;
+
+         if (commentToDelete.type === 'request') {
+            if (newApprovalStatus === 'needs_revision') {
+               newApprovalStatus = 'pending';
+               newRejectionReason = undefined;
+
+               // Use Dot Notation for nested FieldValue ops in Firestore
+               updateData['approval.status'] = 'pending';
+               updateData['approval.rejectionReason'] = deleteField();
+
+               addToast("Đã hoàn tác", "Yêu cầu sửa đã bị xóa. Trạng thái hồ sơ trở về 'Chờ duyệt'.", "info");
+            }
+         }
+
+         // Special Logic: If deleting a 'response', check if there's still an active request
+         // If so, revert status back to 'needs_revision' so teacher can respond again
+         if (commentToDelete.type === 'response') {
+            // Check if there's still at least one 'request' comment remaining
+            const hasActiveRequest = updatedComments.some((c: Comment) => c.type === 'request');
+
+            if (hasActiveRequest && newApprovalStatus === 'pending') {
+               newApprovalStatus = 'needs_revision';
+               updateData['approval.status'] = 'needs_revision';
+               addToast("Đã hoàn tác", "Phản hồi đã bị xóa. Bạn có thể phản hồi lại.", "info");
+            }
+         }
+
+         await updateDoc(fileRef, updateData);
+
+         // Update local state for UI
          setSelectedFile({
             ...selectedFile,
             comments: updatedComments,
-            commentCount: Math.max(0, (selectedFile.commentCount || 0) - 1),
-            hasNewComments: updatedComments.length > 0
+            commentCount: updatedComments.length,
+            hasNewComments: updatedComments.length > 0,
+            approval: {
+               ...(selectedFile as any).approval,
+               status: newApprovalStatus,
+               rejectionReason: newRejectionReason
+            }
          } as any);
 
          setIsDeleteCommentModalOpen(false);
@@ -418,14 +456,152 @@ const ClassRecords: React.FC = () => {
          });
 
          addToast("Đã duyệt hồ sơ", `Hồ sơ "${file.name}" đã được phê duyệt.`, "success");
+
+         // Notify uploader
+         const targetPath = `/class/${classId}`;
+         await createNotification('system', user, {
+            type: 'class',
+            name: `Đã duyệt: ${file.name}`,
+            targetPath: targetPath,
+            extraInfo: { uploaderId: file.uploaderId }
+         });
       } catch (error) {
          console.error("Error approving file:", error);
          addToast("Lỗi", "Không thể duyệt hồ sơ. Vui lòng thử lại.", "error");
       }
    };
 
-   // Mở modal từ chối file
+   // Mở modal yêu cầu sửa lại
+   const openRejectFileModal = (file: ClassFile) => {
+      setFileToReject(file);
+      setRejectionReason('');
+      setIsRejectFileModalOpen(true);
+   };
 
+   // Xử lý yêu cầu sửa lại (Tổ Trưởng/Phó -> Giáo viên)
+   const handleRequestRevision = async () => {
+      if (!user || !fileToReject) return;
+
+      try {
+         const docRef = doc(db, 'class_files', fileToReject.id);
+
+         // Create revision request comment
+         const revisionRequest: Comment = {
+            id: Date.now().toString(),
+            userId: user.id,
+            userName: user.fullName,
+            userRole: user.role,
+            content: rejectionReason || 'Yêu cầu chỉnh sửa lại.',
+            timestamp: new Date().toISOString(),
+            type: 'request'
+         };
+
+         const newApproval = {
+            status: 'needs_revision' as const,
+            reviewerId: user.id,
+            reviewerName: user.fullName,
+            reviewerRole: user.role,
+            reviewedAt: new Date().toISOString(),
+            rejectionReason: rejectionReason
+         };
+
+         await updateDoc(docRef, {
+            approval: newApproval,
+            comments: arrayUnion(revisionRequest),
+            commentCount: ((fileToReject as any).commentCount || 0) + 1
+         });
+
+         // Optimistic UI Update
+         if (selectedFile && selectedFile.id === fileToReject.id) {
+            setSelectedFile({
+               ...selectedFile,
+               approval: newApproval,
+               comments: [...((selectedFile as any).comments || []), revisionRequest],
+               commentCount: ((selectedFile as any).commentCount || 0) + 1
+            } as any);
+         }
+
+         addToast("Đã gửi yêu cầu sửa", `Đã yêu cầu sửa lại hồ sơ "${fileToReject.name}".`, "success");
+
+         // Notify uploader with highlight params
+         const targetPath = `/class/${classId}?fileId=${fileToReject.id}&highlight=true`;
+         await createNotification('comment', user, {
+            type: 'class',
+            name: `Yêu cầu sửa: ${fileToReject.name}`,
+            targetPath: targetPath,
+            extraInfo: { uploaderId: (fileToReject as any).uploaderId, classId }
+         });
+
+         setIsRejectFileModalOpen(false);
+         setFileToReject(null);
+         setRejectionReason('');
+      } catch (error) {
+         console.error("Error requesting revision:", error);
+         addToast("Lỗi", "Không thể gửi yêu cầu sửa. Vui lòng thử lại.", "error");
+      }
+   };
+
+   // Xử lý phản hồi của Giáo viên (gửi lại sau khi sửa)
+   const handleResponse = async (e: React.FormEvent) => {
+      e.preventDefault();
+      if (!newComment.trim() || !selectedFile || !user) return;
+
+      if (!canRespond(selectedFile)) return;
+
+      const response: Comment = {
+         id: Date.now().toString(),
+         userId: user.id,
+         userName: user.fullName,
+         userRole: user.role,
+         content: newComment,
+         timestamp: new Date().toISOString(),
+         type: 'response'
+      };
+
+      try {
+         const docRef = doc(db, 'class_files', selectedFile.id);
+
+         await updateDoc(docRef, {
+            approval: {
+               ...(selectedFile as any).approval,
+               status: 'pending',
+               reviewedAt: new Date().toISOString()
+            },
+            comments: arrayUnion(response),
+            commentCount: ((selectedFile as any).commentCount || 0) + 1
+         });
+
+         // Optimistic UI Update
+         setSelectedFile({
+            ...selectedFile,
+            approval: {
+               ...(selectedFile as any).approval,
+               status: 'pending',
+               reviewedAt: new Date().toISOString()
+            },
+            comments: [...((selectedFile as any).comments || []), response],
+            commentCount: ((selectedFile as any).commentCount || 0) + 1
+         } as any);
+
+         setNewComment('');
+         addToast("Đã gửi phản hồi", "Phản hồi đã được gửi. Hồ sơ chuyển sang trạng thái chờ duyệt.", "success");
+
+         // Notify Reviewer
+         const targetId = (selectedFile as any).approval?.reviewerId;
+         if (targetId && targetId !== user.id) {
+            const targetPath = `/class/${classId}?fileId=${selectedFile.id}&highlight=true`;
+            await createNotification('comment', user, {
+               type: 'class',
+               name: `Phản hồi từ ${user.fullName}: ${selectedFile.name}`,
+               targetPath: targetPath,
+               extraInfo: { uploaderId: targetId }
+            });
+         }
+      } catch (error) {
+         console.error("Error adding response:", error);
+         addToast("Lỗi", "Không thể gửi phản hồi.", "error");
+      }
+   };
 
    // Fetch Class Details
    useEffect(() => {
@@ -593,39 +769,61 @@ const ClassRecords: React.FC = () => {
 
    // Handle notification navigation - switch to correct tab and highlight file
    useEffect(() => {
-      const tab = searchParams.get('tab');
       const fileId = searchParams.get('fileId');
       const highlight = searchParams.get('highlight');
 
-      console.log('[ClassRecords] URL Params:', { tab, fileId, highlight });
+      console.log('[ClassRecords] URL Params:', { fileId, highlight, allFilesCount: allFiles.length });
 
-      if (tab === 'plan') {
-         setActiveTab('plan');
-         setPlanSubTab('week'); // Default to week view where most files are
-      }
+      if (fileId && allFiles.length > 0) {
+         // Find the file in allFiles
+         const targetFile = allFiles.find((f: any) => f.id === fileId);
 
-      if (fileId && highlight === 'true') {
-         console.log('[ClassRecords] Setting highlight for file:', fileId);
-         setHighlightFileId(fileId);
+         if (targetFile) {
+            console.log('[ClassRecords] Found target file:', targetFile.name, 'category:', targetFile.category);
 
-         // Auto-expand the folder containing this file
-         const folderWithFile = folders.find(f => f.files.some(file => file.id === fileId));
-         if (folderWithFile) {
-            console.log('[ClassRecords] Auto-expanding folder:', folderWithFile.id);
-            setExpandedFolderId(folderWithFile.id);
+            // Set the correct tab based on file category
+            const category = targetFile.category || 'plan';
+            if (category === 'plan') {
+               setActiveTab('plan');
+               setPlanSubTab('week');
+            } else if (category === 'assessment') {
+               setActiveTab('assessment');
+            } else if (category === 'students') {
+               setActiveTab('students');
+            } else if (category === 'steam') {
+               setActiveTab('steam');
+            }
+
+            // Auto-expand the folder containing this file
+            const folderWithFile = folders.find(f => f.files.some(file => file.id === fileId));
+            if (folderWithFile) {
+               console.log('[ClassRecords] Auto-expanding folder:', folderWithFile.id);
+               setExpandedFolderId(folderWithFile.id);
+            }
+
+            // Set highlight
+            if (highlight === 'true') {
+               setHighlightFileId(fileId);
+
+               // Clear highlight after 3 seconds
+               const timer = setTimeout(() => {
+                  setHighlightFileId(null);
+               }, 3000);
+
+               // Auto-open the drawer with the target file
+               setSelectedFile(targetFile);
+               setIsDrawerOpen(true);
+
+               // Clear URL params after processing
+               setSearchParams({}, { replace: true });
+
+               return () => clearTimeout(timer);
+            }
+         } else {
+            console.warn('[ClassRecords] File not found:', fileId);
          }
-
-         // Clear highlight after 3 seconds
-         const timer = setTimeout(() => {
-            setHighlightFileId(null);
-         }, 3000);
-
-         // Clear URL params after processing
-         setSearchParams({}, { replace: true });
-
-         return () => clearTimeout(timer);
       }
-   }, [searchParams, setSearchParams, folders]);
+   }, [searchParams, setSearchParams, folders, allFiles]);
 
    if (loading) {
       return (
@@ -1356,6 +1554,7 @@ const ClassRecords: React.FC = () => {
                         </div>
                      </div>
                      <div className="flex items-center gap-2">
+
                         {/* Edit Button - Only show for Word files and file owner */}
                         {selectedFile && isWordFile(selectedFile) && canEditFile(selectedFile) && (
                            <button
@@ -1419,343 +1618,155 @@ const ClassRecords: React.FC = () => {
                               <span className="text-xs font-bold text-gray-800">{new Date(selectedFile.date).toLocaleDateString('vi-VN')}</span>
                            </div>
                         </div>
-
-                        {/* Approval Actions - Only for Reviewer */}
-                        {canComment(selectedFile) && (
-                           <div className="p-4 border-b border-gray-100 bg-gray-50 flex gap-2">
-                              {/* Approve Button */}
-                              {selectedFile.approval?.status !== 'approved' && (
-                                 <button
-                                    onClick={async () => {
-                                       try {
-                                          const fileRef = doc(db, 'class_files', selectedFile.id);
-                                          await updateDoc(fileRef, {
-                                             'approval.status': 'approved',
-                                             'approval.reviewedAt': new Date().toISOString(),
-                                             'approval.reviewerId': user?.id,
-                                             'approval.reviewerName': user?.fullName
-                                          });
-
-                                          // Notify uploader
-                                          createNotification('comment', user!, {
-                                             type: 'class',
-                                             name: `Đã duyệt: ${selectedFile.name}`,
-                                             targetPath: `/class/${currentClass?.id}?tab=plan&fileId=${selectedFile.id}`,
-                                             extraInfo: { classId: currentClass?.id, uploaderId: (selectedFile as any).uploaderId }
-                                          });
-
-                                          addToast("Đã duyệt", "Hồ sơ đã được phê duyệt.", "success");
-
-                                          // Update local state
-                                          setSelectedFile({
-                                             ...selectedFile,
-                                             approval: {
-                                                ...((selectedFile as any).approval || {}),
-                                                status: 'approved',
-                                                reviewedAt: new Date().toISOString()
-                                             }
-                                          } as any);
-                                       } catch (error) {
-                                          console.error("Error approving:", error);
-                                          addToast("Lỗi", "Không thể duyệt hồ sơ", "error");
-                                       }
-                                    }}
-                                    className="flex-1 bg-green-600 text-white px-3 py-2 rounded-lg text-sm font-bold hover:bg-green-700 transition-colors flex items-center justify-center gap-2 shadow-sm"
-                                 >
-                                    <CheckCircle className="h-4 w-4" /> Duyệt
-                                 </button>
-                              )}
-
-                              {/* Request Revision Button */}
-                              {selectedFile.approval?.status !== 'approved' && (
-                                 <button
-                                    onClick={() => {
-                                       setFileToReject(selectedFile);
-                                       setIsRejectFileModalOpen(true);
-                                    }}
-                                    className="flex-1 bg-white text-amber-600 border border-amber-200 px-3 py-2 rounded-lg text-sm font-bold hover:bg-amber-50 transition-colors flex items-center justify-center gap-2"
-                                 >
-                                    <Edit3 className="h-4 w-4" /> Yêu cầu sửa lại
-                                 </button>
-                              )}
+                        {/* Revision History Area (Scrollable) */}
+                        <div className="w-full bg-gray-50 flex flex-col flex-1">
+                           <div className="p-4 bg-white border-b border-gray-100 shadow-sm flex items-center gap-2">
+                              <MessageSquare className="h-5 w-5 text-gray-500" />
+                              <h3 className="font-bold text-gray-800">Lịch sử Yêu cầu & Phản hồi</h3>
                            </div>
-                        )}
 
-                        {/* Comments Area (Scrollable) */}
-                        <div className="flex-1 overflow-y-auto p-4 bg-white">
-                           <h3 className="text-sm font-bold text-gray-800 mb-4 flex items-center gap-2 sticky top-0 bg-white pb-2 z-10">
-                              <MessageCircle className="h-4 w-4 text-amber-500" />
-                              Góp ý chuyên môn
-                           </h3>
+                           <div className="flex-1 overflow-y-auto p-4 space-y-4 font-sans">
 
-                           <div className="space-y-4">
-                              {((selectedFile as any).comments || []).length > 0 ? (
-                                 ((selectedFile as any).comments || []).map((c: Comment) => (
-                                    <div key={c.id} className="flex gap-3 group">
-                                       <div className={`h-8 w-8 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 border ${c.type === 'response'
-                                          ? 'bg-green-100 text-green-700 border-green-200'
-                                          : 'bg-amber-100 text-amber-700 border-amber-200'
-                                          }`}>
-                                          {c.userName?.charAt(0) || 'U'}
-                                       </div>
-                                       <div className={`rounded-xl rounded-tl-none p-3 flex-1 border relative ${c.type === 'response'
-                                          ? 'bg-green-50 border-green-100'
-                                          : 'bg-gray-50 border-gray-100'
-                                          }`}>
-                                          <div className="flex justify-between items-start mb-1">
-                                             <div className="flex flex-col">
-                                                <div className="flex items-center gap-2">
-                                                   <span className="text-xs font-bold text-gray-900">{c.userName}</span>
-                                                   <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${c.type === 'response'
-                                                      ? 'bg-green-200 text-green-700'
-                                                      : 'bg-amber-200 text-amber-700'
-                                                      }`}>
-                                                      {c.type === 'response' ? 'Phản hồi' : 'Góp ý'}
-                                                   </span>
-                                                </div>
-                                                <span className="text-[10px] text-gray-500">{c.userRole}</span>
-                                             </div>
-                                             {/* Edit/Delete buttons - only for own comments */}
-                                             {canManageComment(c) && (
-                                                <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                   <button
-                                                      onClick={() => setEditingComment({ id: c.id, content: c.content })}
-                                                      className="p-1 text-gray-400 hover:text-amber-600 hover:bg-amber-50 rounded transition-colors"
-                                                      title="Chỉnh sửa"
-                                                   >
-                                                      <Edit3 className="h-3 w-3" />
-                                                   </button>
-                                                   <button
-                                                      onClick={() => { setCommentToDelete(c); setIsDeleteCommentModalOpen(true); }}
-                                                      className="p-1 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
-                                                      title="Xóa"
-                                                   >
-                                                      <Trash2 className="h-3 w-3" />
-                                                   </button>
-                                                </div>
-                                             )}
-                                          </div>
-
-                                          {/* Show edit mode or content */}
-                                          {editingComment?.id === c.id ? (
-                                             <div className="space-y-2">
-                                                <textarea
-                                                   value={editingComment.content}
-                                                   onChange={(e) => setEditingComment({ ...editingComment, content: e.target.value })}
-                                                   className="w-full text-sm border border-amber-300 rounded-lg p-2 focus:outline-none focus:ring-2 focus:ring-amber-500"
-                                                   rows={2}
-                                                />
-                                                <div className="flex gap-2 justify-end">
-                                                   <button
-                                                      onClick={() => setEditingComment(null)}
-                                                      className="px-2 py-1 text-xs text-gray-600 hover:bg-gray-100 rounded"
-                                                   >
-                                                      Hủy
-                                                   </button>
-                                                   <button
-                                                      onClick={handleSaveEditComment}
-                                                      className="px-2 py-1 text-xs text-white bg-amber-500 hover:bg-amber-600 rounded"
-                                                   >
-                                                      Lưu
-                                                   </button>
-                                                </div>
-                                             </div>
-                                          ) : (
-                                             <p className="text-sm text-gray-800 leading-relaxed">{c.content}</p>
-                                          )}
-
-                                          <p className="text-[10px] text-gray-400 mt-1">
-                                             {new Date(c.timestamp).toLocaleString('vi-VN')}
-                                             {(c as any).editedAt && <span className="ml-1">(đã chỉnh sửa)</span>}
-                                          </p>
-                                       </div>
+                              {/* Active Revision Alert */}
+                              {(selectedFile as any).approval?.status === 'needs_revision' &&
+                                 (selectedFile as any).approval?.rejectionReason &&
+                                 // Hide if the latest comment already shows this request
+                                 !(((selectedFile as any).comments?.length || 0) > 0 &&
+                                    (selectedFile as any).comments[(selectedFile as any).comments.length - 1].type === 'request' &&
+                                    (selectedFile as any).comments[(selectedFile as any).comments.length - 1].content === (selectedFile as any).approval.rejectionReason) && (
+                                    <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-4">
+                                       <h4 className="text-xs font-bold text-amber-800 uppercase mb-1 flex items-center gap-1">
+                                          <AlertCircle className="h-3 w-3" /> Yêu cầu sửa hiện tại
+                                       </h4>
+                                       <p className="text-sm text-amber-900">{(selectedFile as any).approval.rejectionReason}</p>
                                     </div>
-                                 ))
+                                 )}
+
+                              <div className="space-y-4">
+                                 {((selectedFile as any).comments || []).length > 0 ? (
+                                    ((selectedFile as any).comments || []).map((c: Comment) => (
+                                       <div key={c.id} className={`flex gap-3 ${c.type === 'response' ? 'flex-row-reverse' : ''}`}>
+                                          <div className={`h-8 w-8 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 text-white shadow-sm
+                                          ${c.type === 'request' ? 'bg-amber-500' : c.type === 'response' ? 'bg-blue-500' : 'bg-gray-400'}`}>
+                                             {c.userName?.charAt(0) || 'U'}
+                                          </div>
+                                          <div className={`flex-1 max-w-[85%] space-y-1`}>
+                                             <div className={`p-3 rounded-2xl shadow-sm text-sm relative group
+                                             ${c.type === 'request' ? 'bg-amber-50 border border-amber-100 text-gray-800 rounded-tl-none' :
+                                                   c.type === 'response' ? 'bg-blue-50 border border-blue-100 text-gray-800 rounded-tr-none' :
+                                                      'bg-white border border-gray-200 text-gray-600'}`}>
+                                                <div className="flex justify-between items-start mb-1">
+                                                   <span className={`text-xs font-bold ${c.type === 'request' ? 'text-amber-700' : c.type === 'response' ? 'text-blue-700' : 'text-gray-700'}`}>
+                                                      {c.userName}
+                                                      {c.type === 'request' && <span className="ml-1 text-[10px] bg-amber-200 px-1 rounded text-amber-800">Yêu cầu sửa</span>}
+                                                      {c.type === 'response' && <span className="ml-1 text-[10px] bg-blue-200 px-1 rounded text-blue-800">Phản hồi</span>}
+                                                   </span>
+
+                                                   {/* Edit/Delete buttons - only for own comments */}
+                                                   {canManageComment(c) && (
+                                                      <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity absolute right-2 top-2 bg-white/50 rounded-lg p-0.5 backdrop-blur-sm">
+                                                         <button
+                                                            onClick={() => setEditingComment({ id: c.id, content: c.content })}
+                                                            className="p-1 hover:bg-gray-200 rounded text-gray-500 hover:text-blue-600"
+                                                            title="Sửa"
+                                                         >
+                                                            <Edit3 className="h-3 w-3" />
+                                                         </button>
+                                                         <button
+                                                            onClick={() => { setCommentToDelete(c); setIsDeleteCommentModalOpen(true); }}
+                                                            className="p-1 hover:bg-gray-200 rounded text-gray-500 hover:text-red-600"
+                                                            title="Xóa"
+                                                         >
+                                                            <Trash2 className="h-3 w-3" />
+                                                         </button>
+                                                      </div>
+                                                   )}
+                                                </div>
+
+                                                {/* Show edit mode or content */}
+                                                {editingComment?.id === c.id ? (
+                                                   <div className="space-y-2 mt-2">
+                                                      <textarea
+                                                         value={editingComment.content}
+                                                         onChange={(e) => setEditingComment({ ...editingComment, content: e.target.value })}
+                                                         className="w-full text-sm border border-gray-300 rounded p-2 focus:ring-2 focus:ring-blue-500 outline-none"
+                                                         rows={2}
+                                                      />
+                                                      <div className="flex gap-2 justify-end">
+                                                         <button onClick={() => setEditingComment(null)} className="text-xs px-2 py-1 bg-gray-200 rounded hover:bg-gray-300">Hủy</button>
+                                                         <button onClick={handleSaveEditComment} className="text-xs px-2 py-1 bg-blue-500 text-white rounded hover:bg-blue-600">Lưu</button>
+                                                      </div>
+                                                   </div>
+                                                ) : (
+                                                   <p className="whitespace-pre-wrap">{c.content}</p>
+                                                )}
+
+                                                <p className="text-[10px] text-gray-400 mt-1 text-right">
+                                                   {new Date(c.timestamp).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })} - {new Date(c.timestamp).toLocaleDateString('vi-VN')}
+                                                   {(c as any).editedAt && <span className="italic ml-1">(đã sửa)</span>}
+                                                </p>
+                                             </div>
+                                          </div>
+                                       </div>
+                                    ))
+                                 ) : (
+                                    <div className="text-center py-12 flex flex-col items-center text-gray-300">
+                                       <CheckCircle className="h-10 w-10 mb-2 opacity-50" />
+                                       <span className="text-xs italic">Chưa có lịch sử chỉnh sửa nào.</span>
+                                    </div>
+                                 )}
+                                 <div ref={commentsEndRef} />
+                              </div>
+                           </div>
+
+                           {/* Input Area (Conditional) */}
+                           <div className="p-4 bg-white border-t border-gray-200">
+                              {(selectedFile as any).approval?.status === 'needs_revision' && canRespond(selectedFile) ? (
+                                 /* 1. Show Response Input for Author (Teacher) if Needs Revision */
+                                 <form onSubmit={handleResponse} className="flex gap-2 relative">
+                                    <input
+                                       type="text"
+                                       value={newComment}
+                                       onChange={(e) => setNewComment(e.target.value)}
+                                       placeholder="Nhập phản hồi/giải trình của bạn..."
+                                       className="flex-1 bg-gray-50 border border-gray-300 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all shadow-sm"
+                                    />
+                                    <button
+                                       type="submit"
+                                       disabled={!newComment.trim()}
+                                       className="bg-blue-600 hover:bg-blue-700 text-white rounded-xl px-4 py-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-sm flex items-center justify-center"
+                                    >
+                                       <Send className="h-5 w-5" />
+                                    </button>
+                                 </form>
+                              ) : (selectedFile as any).approval?.status === 'pending' && canApproveFile(selectedFile) ? (
+                                 /* 2. Show Actions for Reviewer (Tổ Trưởng/Phó) if Pending */
+                                 <div className="flex gap-2">
+                                    <button
+                                       onClick={() => handleApproveFile(selectedFile)}
+                                       className="px-4 py-2 text-sm font-bold text-white bg-green-500 hover:bg-green-600 rounded-lg transition-colors shadow-sm flex items-center gap-1.5"
+                                    >
+                                       <CheckCircle className="h-4 w-4" /> Duyệt
+                                    </button>
+                                    <button
+                                       onClick={() => openRejectFileModal(selectedFile)}
+                                       className="px-4 py-2 text-sm font-bold text-amber-600 bg-white border border-amber-300 hover:bg-amber-50 rounded-lg transition-colors shadow-sm flex items-center gap-1.5"
+                                    >
+                                       <Edit3 className="h-4 w-4" /> Yêu cầu sửa lại
+                                    </button>
+                                 </div>
                               ) : (
-                                 <div className="text-center py-12 flex flex-col items-center text-gray-300">
-                                    <MessageCircle className="h-10 w-10 mb-2 opacity-50" />
-                                    <span className="text-xs italic">Chưa có góp ý nào.</span>
+                                 /* 3. Helper or Disabled State */
+                                 <div className="text-center text-xs text-gray-500 bg-gray-50 p-2 rounded-lg border border-dashed border-gray-200">
+                                    {(selectedFile as any).approval?.status === 'approved'
+                                       ? "Hồ sơ đã được duyệt. Không thể chỉnh sửa thêm."
+                                       : !canRespond(selectedFile) && (selectedFile as any).approval?.status === 'needs_revision'
+                                          ? "Đang chờ tác giả phản hồi..."
+                                          : "Hồ sơ đang chờ xử lý."}
                                  </div>
                               )}
-                              <div ref={commentsEndRef} />
                            </div>
                         </div>
-
-                        {/* Footer Input - Only show if user can comment */}
-                        {canComment(selectedFile) ? (
-                           <div className="p-4 border-t border-gray-200 bg-gray-50">
-                              <div className="relative">
-                                 <input
-                                    type="text"
-                                    className="w-full pl-4 pr-12 py-3 bg-white border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent shadow-sm"
-                                    placeholder="Nhập ý kiến chỉ đạo..."
-                                    value={newComment}
-                                    onChange={(e) => setNewComment(e.target.value)}
-                                 />
-                                 <button
-                                    onClick={async () => {
-                                       if (!newComment.trim() || !user || !selectedFile) return;
-
-                                       const comment: Comment = {
-                                          id: Date.now().toString(),
-                                          userId: user.id,
-                                          userName: user.fullName,
-                                          userRole: user.roleLabel || user.role,
-                                          content: newComment.trim(),
-                                          timestamp: new Date().toISOString(),
-                                          type: 'comment'  // Reviewer comment
-                                       };
-
-                                       try {
-                                          const fileRef = doc(db, 'class_files', selectedFile.id);
-                                          await updateDoc(fileRef, {
-                                             comments: arrayUnion(comment),
-                                             hasNewComments: true,
-                                             commentCount: (selectedFile.commentCount || 0) + 1,
-                                             // Update approval status to needs_revision when comment is posted
-                                             approval: {
-                                                ...((selectedFile as any).approval || {}),
-                                                status: 'needs_revision',
-                                                reviewerId: user.id,
-                                                reviewerName: user.fullName,
-                                                reviewerRole: user.roleLabel || user.role
-                                             }
-                                          });
-
-                                          // Update local state to show new comment immediately
-                                          setSelectedFile({
-                                             ...selectedFile,
-                                             comments: [...((selectedFile as any).comments || []), comment],
-                                             hasNewComments: true,
-                                             commentCount: (selectedFile.commentCount || 0) + 1,
-                                             approval: {
-                                                ...((selectedFile as any).approval || {}),
-                                                status: 'needs_revision',
-                                                reviewerId: user.id,
-                                                reviewerName: user.fullName,
-                                                reviewerRole: user.roleLabel || user.role
-                                             }
-                                          } as any);
-
-                                          // Send Notification to file owner
-                                          createNotification('comment', user, {
-                                             type: 'class',
-                                             name: selectedFile.name,
-                                             targetPath: `/class/${classId}?tab=plan&fileId=${selectedFile.id}`,
-                                             extraInfo: { classId, uploaderId: (selectedFile as any).uploaderId }
-                                          });
-
-                                          setNewComment('');
-                                          addToast("Đã gửi góp ý", "Nội dung của bạn đã được ghi nhận.", "success");
-
-                                          // Scroll to new comment
-                                          setTimeout(() => {
-                                             commentsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-                                          }, 100);
-                                       } catch (error) {
-                                          console.error("Error adding comment: ", error);
-                                          addToast("Lỗi", "Không thể gửi bình luận.", "error");
-                                       }
-                                    }}
-                                    disabled={!newComment.trim()}
-                                    className="absolute right-2 top-1/2 transform -translate-y-1/2 p-1.5 bg-amber-600 text-white rounded-lg hover:bg-amber-700 disabled:opacity-50 transition-all"
-                                 >
-                                    <Send className="h-4 w-4" />
-                                 </button>
-                              </div>
-                              <p className="text-[10px] text-gray-400 mt-2 text-center flex items-center justify-center gap-1">
-                                 <Lock className="h-2.5 w-2.5" /> Chỉ nội bộ BGH và GVCN xem được.
-                              </p>
-                           </div>
-                        ) : canRespond(selectedFile) ? (
-                           /* Response input for file owner (teacher) */
-                           <div className="p-4 border-t border-gray-200 bg-green-50">
-                              <div className="text-xs text-green-700 mb-2 font-medium flex items-center gap-1">
-                                 <MessageCircle className="h-3 w-3" />
-                                 Phản hồi góp ý của người kiểm duyệt
-                              </div>
-                              <div className="relative">
-                                 <input
-                                    type="text"
-                                    className="w-full pl-4 pr-12 py-3 bg-white border border-green-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent shadow-sm"
-                                    placeholder="Nhập nội dung phản hồi..."
-                                    value={newComment}
-                                    onChange={(e) => setNewComment(e.target.value)}
-                                 />
-                                 <button
-                                    onClick={async () => {
-                                       if (!newComment.trim() || !user || !selectedFile) return;
-
-                                       const response: Comment = {
-                                          id: Date.now().toString(),
-                                          userId: user.id,
-                                          userName: user.fullName,
-                                          userRole: user.roleLabel || user.role,
-                                          content: newComment.trim(),
-                                          timestamp: new Date().toISOString(),
-                                          type: 'response'  // Teacher response
-                                       };
-
-                                       try {
-                                          const fileRef = doc(db, 'class_files', selectedFile.id);
-                                          await updateDoc(fileRef, {
-                                             comments: arrayUnion(response),
-                                             commentCount: (selectedFile.commentCount || 0) + 1,
-                                             // Update approval status to responded
-                                             approval: {
-                                                ...((selectedFile as any).approval || {}),
-                                                status: 'responded'
-                                             }
-                                          });
-
-                                          // Update local state
-                                          setSelectedFile({
-                                             ...selectedFile,
-                                             comments: [...((selectedFile as any).comments || []), response],
-                                             commentCount: (selectedFile.commentCount || 0) + 1,
-                                             approval: {
-                                                ...((selectedFile as any).approval || {}),
-                                                status: 'responded'
-                                             }
-                                          } as any);
-
-                                          // Notify reviewer
-                                          const reviewerId = (selectedFile as any).approval?.reviewerId;
-                                          if (reviewerId) {
-                                             createNotification('comment', user, {
-                                                type: 'class',
-                                                name: `Phản hồi: ${selectedFile.name}`,
-                                                targetPath: `/class/${classId}?tab=plan&fileId=${selectedFile.id}`,
-                                                extraInfo: { classId, uploaderId: reviewerId }
-                                             });
-                                          }
-
-                                          setNewComment('');
-                                          addToast("Đã gửi phản hồi", "Người kiểm duyệt sẽ nhận được thông báo.", "success");
-
-                                          setTimeout(() => {
-                                             commentsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-                                          }, 100);
-                                       } catch (error) {
-                                          console.error("Error adding response: ", error);
-                                          addToast("Lỗi", "Không thể gửi phản hồi.", "error");
-                                       }
-                                    }}
-                                    disabled={!newComment.trim()}
-                                    className="absolute right-2 top-1/2 transform -translate-y-1/2 p-1.5 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 transition-all"
-                                 >
-                                    <Send className="h-4 w-4" />
-                                 </button>
-                              </div>
-                           </div>
-                        ) : (
-                           <div className="p-4 border-t border-gray-200 bg-gray-50">
-                              <div className="text-center text-xs text-gray-400 py-2">
-                                 <Lock className="h-4 w-4 mx-auto mb-1 opacity-50" />
-                                 Chỉ BGH và Tổ trưởng/phó mới có quyền góp ý.
-                              </div>
-                           </div>
-                        )}
                      </div>
                   </div>
                </div>
@@ -1871,70 +1882,9 @@ const ClassRecords: React.FC = () => {
                               Hủy bỏ
                            </button>
                            <button
-                              onClick={async () => {
-                                 if (!user || !fileToReject || !rejectionReason.trim()) return;
-
-                                 try {
-                                    const docRef = doc(db, 'class_files', fileToReject.id);
-
-                                    // Create a comment for the revision request
-                                    const revisionComment: Comment = {
-                                       id: Date.now().toString(),
-                                       userId: user.id,
-                                       userName: user.fullName,
-                                       userRole: user.roleLabel || user.role,
-                                       content: rejectionReason.trim(),
-                                       timestamp: new Date().toISOString(),
-                                       type: 'comment'
-                                    };
-
-                                    await updateDoc(docRef, {
-                                       approval: {
-                                          status: 'needs_revision',
-                                          reviewerId: user.id,
-                                          reviewerName: user.fullName,
-                                          reviewerRole: user.role,
-                                          reviewedAt: new Date().toISOString(),
-                                          rejectionReason: rejectionReason // Optional: keep for history
-                                       },
-                                       comments: arrayUnion(revisionComment),
-                                       commentCount: (fileToReject.commentCount || 0) + 1,
-                                       hasNewComments: true
-                                    });
-
-                                    // Notify uploader
-                                    createNotification('comment', user, {
-                                       type: 'class',
-                                       name: `Yêu cầu sửa lại: ${fileToReject.name}`,
-                                       targetPath: `/class/${classId}?tab=plan&fileId=${fileToReject.id}`,
-                                       extraInfo: { classId, uploaderId: (fileToReject as any).uploaderId }
-                                    });
-
-                                    addToast("Đã gửi yêu cầu", `Đã yêu cầu giáo viên sửa lại hồ sơ.`, "success");
-
-                                    // Update local state if the rejected file is the currently selected one
-                                    if (selectedFile && selectedFile.id === fileToReject.id) {
-                                       setSelectedFile({
-                                          ...selectedFile,
-                                          approval: {
-                                             ...((selectedFile as any).approval || {}),
-                                             status: 'needs_revision'
-                                          },
-                                          comments: [...((selectedFile as any).comments || []), revisionComment],
-                                          commentCount: (selectedFile.commentCount || 0) + 1
-                                       } as any);
-                                    }
-
-                                    setIsRejectFileModalOpen(false);
-                                    setFileToReject(null);
-                                    setRejectionReason('');
-                                 } catch (error) {
-                                    console.error("Error requesting revision:", error);
-                                    addToast("Lỗi", "Có lỗi xảy ra. Vui lòng thử lại.", "error");
-                                 }
-                              }}
+                              onClick={handleRequestRevision}
                               disabled={!rejectionReason.trim()}
-                              className="px-4 py-2 text-sm font-bold text-white bg-amber-500 rounded-lg hover:bg-amber-600 shadow-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                              className="px-4 py-2 text-sm font-medium text-white bg-amber-600 rounded-lg hover:bg-amber-700 shadow-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                            >
                               <Send className="h-4 w-4 mr-1 inline" /> Gửi yêu cầu
                            </button>
@@ -1944,7 +1894,6 @@ const ClassRecords: React.FC = () => {
                </div>
             )
          }
-
          {/* --- UPLOAD MODAL (NEW) --- */}
          {
             isUploadModalOpen && (

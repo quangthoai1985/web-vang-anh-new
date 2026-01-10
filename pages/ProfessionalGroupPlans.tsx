@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
    ChevronRight,
    Upload,
@@ -29,7 +29,7 @@ import { Comment, ApprovalInfo, UserRole } from '../types';
 import { useAuth } from '../context/AuthContext';
 import { useNotification } from '../context/NotificationContext';
 import { db } from '../firebase';
-import { collection, addDoc, deleteDoc, doc, onSnapshot, query, orderBy, updateDoc, arrayUnion } from 'firebase/firestore';
+import { collection, doc, query, where, orderBy, getDocs, updateDoc, deleteDoc, addDoc, arrayUnion, deleteField, onSnapshot } from 'firebase/firestore';
 import { createNotification } from '../utils/notificationUtils';
 import { storage } from '../firebase';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
@@ -71,6 +71,13 @@ const ProfessionalGroupPlans: React.FC = () => {
    const navigate = useNavigate();
    const { user } = useAuth();
    const { addToast } = useNotification();
+   const [searchParams, setSearchParams] = useSearchParams();
+
+   // Highlight state for notification navigation
+   const [highlightFileId, setHighlightFileId] = useState<string | null>(null);
+   const [isDeleteRevisionModalOpen, setIsDeleteRevisionModalOpen] = useState(false);
+   const [itemToDeleteRevision, setItemToDeleteRevision] = useState<GroupPlan | MeetingMinute | null>(null);
+
 
    // Data State
    const [plans, setPlans] = useState<GroupPlan[]>([]);
@@ -100,6 +107,46 @@ const ProfessionalGroupPlans: React.FC = () => {
 
       return () => unsubscribe();
    }, []);
+
+   // Handle notification navigation - highlight and open drawer
+   useEffect(() => {
+      const fileId = searchParams.get('fileId');
+      const highlight = searchParams.get('highlight');
+
+      if (fileId && highlight === 'true') {
+         setHighlightFileId(fileId);
+
+         // Find the item to open drawer
+         // Note: We need to access the current 'plans' and 'minutes' state. 
+         // Since this effect depends on searchParams, it might run before plans are loaded.
+         // However, when plans change, we don't necessarily want to re-run this logic unless 
+         // we haven't found the item yet.
+         // Better strategy: Add dependencies on plans/minutes, but only act if fileId is set.
+
+         const foundPlan = plans.find(p => p.id === fileId);
+         const foundMinute = minutes.find(m => m.id === fileId);
+         const foundItem = foundPlan || foundMinute;
+
+         if (foundItem) {
+            setSelectedItem(foundItem);
+            setIsDrawerOpen(true);
+
+            // Initial scroll attempt
+            const element = document.getElementById(`file-${fileId}`);
+            if (element) {
+               element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+
+            // Clear highlight after 3 seconds
+            setTimeout(() => {
+               setHighlightFileId(null);
+            }, 3000);
+
+            // Clear URL params
+            setSearchParams({}, { replace: true });
+         }
+      }
+   }, [searchParams, plans, minutes, setSearchParams]);
 
    // UI State
    const [selectedItem, setSelectedItem] = useState<GroupPlan | MeetingMinute | null>(null);
@@ -235,7 +282,7 @@ const ProfessionalGroupPlans: React.FC = () => {
          await createNotification('system', user, {
             type: 'group',
             name: `Đã duyệt: ${item.title}`,
-            targetPath: '/professional-group-plans',
+            targetPath: '/to-chuyen-mon-ke-hoach',
             extraInfo: { uploaderId: (item as any).uploaderId }
          });
       } catch (error) {
@@ -251,7 +298,7 @@ const ProfessionalGroupPlans: React.FC = () => {
       if (!window.confirm("Bạn có chắc chắn muốn CHỐT biên bản này? Sau khi chốt sẽ hiển thị trạng thái 'Đã chốt'.")) return;
 
       try {
-         const docRef = doc(db, 'minutes', minute.id);
+         const docRef = doc(db, 'plans', minute.id);
          await updateDoc(docRef, {
             status: 'finalized'
          });
@@ -277,36 +324,49 @@ const ProfessionalGroupPlans: React.FC = () => {
       try {
          const docRef = doc(db, 'plans', itemToReject.id);
 
-         const revisionComment: Comment = {
+         // TYPE CHANGE: 'request' instead of 'comment'
+         const revisionRequest: Comment = {
             id: Date.now().toString(),
             userId: user.id,
             userName: user.fullName,
             userRole: user.role,
             content: rejectionReason || 'Yêu cầu chỉnh sửa lại.',
             timestamp: new Date().toISOString(),
-            type: 'comment'
+            type: 'request' // Distinct type for revision requests
+         };
+
+         const newApproval = {
+            status: 'needs_revision' as const,
+            reviewerId: user.id,
+            reviewerName: user.fullName,
+            reviewerRole: user.role,
+            reviewedAt: new Date().toISOString(),
+            rejectionReason: rejectionReason
          };
 
          await updateDoc(docRef, {
-            approval: {
-               status: 'needs_revision',
-               reviewerId: user.id,
-               reviewerName: user.fullName,
-               reviewerRole: user.role,
-               reviewedAt: new Date().toISOString(),
-               rejectionReason: rejectionReason
-            },
-            comments: arrayUnion(revisionComment),
+            approval: newApproval,
+            comments: arrayUnion(revisionRequest),
             commentCount: (itemToReject.commentCount || 0) + 1
          });
 
+         // Optimistic UI Update: Update selectedItem immediately
+         if (selectedItem && selectedItem.id === itemToReject.id) {
+            setSelectedItem({
+               ...selectedItem,
+               approval: newApproval,
+               comments: [...(selectedItem.comments || []), revisionRequest],
+               commentCount: (selectedItem.commentCount || 0) + 1
+            });
+         }
+
          addToast("Đã gửi yêu cầu sửa", `Đã yêu cầu sửa lại hồ sơ "${itemToReject.title}".`, "success");
 
-         // Notify uploader
+         // Notify uploader with HIGHLIGHT params
          await createNotification('comment', user, {
             type: 'group',
             name: `Yêu cầu sửa: ${itemToReject.title}`,
-            targetPath: '/professional-group-plans',
+            targetPath: `/to-chuyen-mon-ke-hoach?fileId=${itemToReject.id}&highlight=true`, // Updated path
             extraInfo: { uploaderId: (itemToReject as any).uploaderId }
          });
 
@@ -374,57 +434,71 @@ const ProfessionalGroupPlans: React.FC = () => {
       }
    };
 
-   const handlePostComment = async (e: React.FormEvent) => {
+   // Handle Author Response
+   const handleResponse = async (e: React.FormEvent) => {
       e.preventDefault();
       if (!newComment.trim() || !selectedItem || !user) return;
 
-      // Determine comment type based on role
-      // If user is Reviewer (Principal/Admin) -> 'comment'
-      // If user is Uploader -> 'response'
-      const isReviewer = canComment(selectedItem);
-      const isUploader = (selectedItem as any).uploaderId === user.id;
+      if (!canRespond(selectedItem)) return;
 
-      // Fallback: Default to 'comment' if logic ambiguous, but strictly prioritize 'response' for uploader if they are NOT the reviewer (or if self-reviewing?)
-      // Actually, if Principal uploads, they are both. But generally 'comment' is for direction.
-      const type = isUploader && !isReviewer ? 'response' : 'comment';
-
-      const comment: Comment = {
+      const response: Comment = {
          id: Date.now().toString(),
          userId: user.id,
          userName: user.fullName,
          userRole: user.role,
          content: newComment,
          timestamp: new Date().toISOString(),
-         type: type as 'comment' | 'response'
+         type: 'response'
       };
 
       try {
          const docRef = doc(db, 'plans', selectedItem.id);
+
+         // When author responds, we assume they have fixed the issue or are explaining.
+         // Optionally we could set status back to 'pending' if it was 'needs_revision'
+         // so it shows up for the admin again.
+         // User requirement: "Allowing Edit/Delete... Reverting Status...". 
+         // For Response specifically: "Author Response... Admin Re-approve". 
+         // If we don't change status to pending, it might stay in 'Cần sửa' filter.
+         // Let's set it to 'pending' to signal "I'm done, please review".
+
          await updateDoc(docRef, {
-            comments: arrayUnion(comment),
+            approval: {
+               ...selectedItem.approval,
+               status: 'pending', // Revert to pending on response
+               reviewedAt: new Date().toISOString() // Update timestamp
+            },
+            comments: arrayUnion(response),
             commentCount: (selectedItem.commentCount || 0) + 1
          });
 
-         // Update local state (optimistic or wait for snapshot)
-         // Snapshot will handle it, but we might want to clear input immediately
          setNewComment('');
-         addToast("Đã gửi góp ý", "Nội dung của bạn đã được ghi nhận.", "success");
+         addToast("Đã gửi phản hồi", "Phản hồi của bạn đã được gửi. Hồ sơ chuyển sang trạng thái chờ duyệt.", "success");
 
-         // Send Notification
-         await createNotification('comment', user, {
-            type: 'group',
-            name: selectedItem.title,
-            targetPath: '/professional-group-plans',
-            extraInfo: { uploaderId: (selectedItem as any).uploaderId }
-         });
+         // Notify Reviewer (The one who requested revision, or just Principal)
+         // Find the last reviewer ID
+         const targetId = selectedItem.approval?.reviewerId;
+
+         // If a specific reviewer requested it, notify them. Otherwise notify Head/ViceHead/Principal logic?
+         // Since we don't have a complex role map here, let's try to notify the last reviewer.
+         // If no reviewerId, maybe generic notification?
+
+         if (targetId && targetId !== user.id) {
+            await createNotification('comment', user, {
+               type: 'group',
+               name: `Phản hồi từ ${user.fullName}: ${selectedItem.title}`,
+               targetPath: `/to-chuyen-mon-ke-hoach?fileId=${selectedItem.id}&highlight=true`,
+               extraInfo: { uploaderId: targetId }
+            });
+         }
 
       } catch (error) {
-         console.error("Error adding comment: ", error);
-         addToast("Lỗi", "Không thể gửi góp ý.", "error");
+         console.error("Error adding response: ", error);
+         addToast("Lỗi", "Không thể gửi phản hồi.", "error");
       }
    };
 
-   // --- Comment Management (Edit/Delete) ---
+
    // --- Comment Management (Edit/Delete) ---
    const handleDeleteComment = (comment: Comment) => {
       setCommentToDelete(comment);
@@ -438,27 +512,122 @@ const ProfessionalGroupPlans: React.FC = () => {
          const docRef = doc(db, 'plans', selectedItem.id);
          const updatedComments = selectedItem.comments!.filter(c => c.id !== commentToDelete.id);
 
-         await updateDoc(docRef, {
+         const updateData: any = {
             comments: updatedComments,
             commentCount: updatedComments.length
-         });
+         };
 
-         addToast("Đã xóa", "Góp ý đã được xóa.", "success");
+         // Special Logic: If deleting a 'request', check if we need to revert status
+         let newApprovalStatus = selectedItem.approval?.status;
+         let newRejectionReason = selectedItem.approval?.rejectionReason;
 
-         // Notify about deletion
-         await createNotification('comment', user, {
-            type: 'group',
-            name: `Đã xóa góp ý: ${selectedItem.title}`,
-            targetPath: '/professional-group-plans',
-            extraInfo: { uploaderId: (selectedItem as any).uploaderId }
-         });
+         if (commentToDelete.type === 'request') {
+            if (newApprovalStatus === 'needs_revision') {
+               newApprovalStatus = 'pending';
+               newRejectionReason = undefined; // For local state
+
+               // Use Dot Notation for nested FieldValue ops in Firestore
+               updateData['approval.status'] = 'pending';
+               updateData['approval.rejectionReason'] = deleteField();
+
+               addToast("Đã hoàn tác", "Yêu cầu sửa đã bị xóa. Trạng thái hồ sơ trở về 'Chờ duyệt'.", "info");
+            }
+         }
+
+         await updateDoc(docRef, updateData);
+
+         // Update Local State for UI
+         if (selectedItem) {
+            setSelectedItem({
+               ...selectedItem,
+               comments: updatedComments,
+               commentCount: updatedComments.length,
+               approval: {
+                  ...selectedItem.approval,
+                  status: newApprovalStatus,
+                  rejectionReason: newRejectionReason
+               } as any
+            });
+         }
+
+         addToast("Đã xóa", "Nội dung đã được xóa.", "success");
 
          setIsDeleteCommentModalOpen(false);
          setCommentToDelete(null);
 
       } catch (error) {
          console.error("Error deleting comment:", error);
-         addToast("Lỗi", "Không thể xóa góp ý.", "error");
+         addToast("Lỗi", "Không thể xóa nội dung.", "error");
+      }
+   };
+
+   // --- Handle Active Revision (Legacy/Orphan Support) ---
+   const handleDeleteActiveRevision = (item: GroupPlan | MeetingMinute) => {
+      setItemToDeleteRevision(item);
+      setIsDeleteRevisionModalOpen(true);
+   };
+
+   const confirmDeleteActiveRevision = async () => {
+      if (!itemToDeleteRevision) return;
+      try {
+         const docRef = doc(db, 'plans', itemToDeleteRevision.id);
+         await updateDoc(docRef, {
+            'approval.status': 'pending',
+            'approval.rejectionReason': deleteField(),
+            'approval.reviewedAt': new Date().toISOString()
+         });
+
+         // Update Local State for UI
+         if (selectedItem && selectedItem.id === itemToDeleteRevision.id) {
+            setSelectedItem({
+               ...selectedItem,
+               approval: {
+                  ...selectedItem.approval,
+                  status: 'pending',
+                  rejectionReason: undefined // Clear it locally
+               } as any
+            });
+         }
+
+         addToast("Đã hoàn tác", "Yêu cầu sửa đã được xóa.", "success");
+         setIsDeleteRevisionModalOpen(false);
+         setItemToDeleteRevision(null);
+      } catch (error) {
+         console.error("Error deleting active revision:", error);
+         addToast("Lỗi", "Không thể xóa yêu cầu.", "error");
+      }
+   };
+
+   const handleEditActiveRevision = async (item: GroupPlan | MeetingMinute) => {
+      const newReason = prompt("Nhập nội dung yêu cầu sửa mới:", item.approval?.rejectionReason);
+      if (newReason === null || newReason === item.approval?.rejectionReason) return;
+      if (!newReason.trim()) {
+         alert("Nội dung không được để trống!");
+         return;
+      }
+
+      try {
+         const docRef = doc(db, 'plans', item.id);
+         await updateDoc(docRef, {
+            'approval.rejectionReason': newReason,
+            'approval.reviewedAt': new Date().toISOString()
+         });
+
+         // Update Local State for UI
+         if (selectedItem && selectedItem.id === item.id) {
+            setSelectedItem({
+               ...selectedItem,
+               approval: {
+                  ...selectedItem.approval,
+                  rejectionReason: newReason
+               } as any
+            });
+         }
+
+         addToast("Thành công", "Đã cập nhật yêu cầu sửa.", "success");
+      } catch (error) {
+         console.error("Error editing active revision:", error);
+         addToast("Lỗi", "Không thể cập nhật yêu cầu.", "error");
       }
    };
 
@@ -485,7 +654,7 @@ const ProfessionalGroupPlans: React.FC = () => {
          await createNotification('comment', user, {
             type: 'group',
             name: `Đã sửa góp ý: ${item.title}`,
-            targetPath: '/professional-group-plans',
+            targetPath: '/to-chuyen-mon-ke-hoach',
             extraInfo: { uploaderId: (item as any).uploaderId }
          });
 
@@ -576,7 +745,7 @@ const ProfessionalGroupPlans: React.FC = () => {
             await createNotification('upload', user, {
                type: 'group',
                name: uploadFormData.name,
-               targetPath: '/professional-group-plans'
+               targetPath: '/to-chuyen-mon-ke-hoach'
             });
          }
       } catch (error) {
@@ -700,8 +869,11 @@ const ProfessionalGroupPlans: React.FC = () => {
                   {plans.map((plan) => (
                      <div
                         key={plan.id}
+                        id={`file-${plan.id}`} // Check ID for scroll
                         onClick={() => handleItemClick(plan)}
-                        className="bg-white rounded-xl p-5 border border-gray-100 shadow-sm hover:shadow-md hover:border-orange-200 transition-all cursor-pointer group"
+                        className={`bg-white rounded-xl p-5 border shadow-sm hover:shadow-md transition-all cursor-pointer group
+                           ${highlightFileId === plan.id ? 'ring-2 ring-orange-500 bg-orange-50 animate-pulse' : 'border-gray-100 hover:border-orange-200'}
+                        `}
                      >
                         <div className="flex items-start justify-between">
                            <div className="flex items-center gap-4">
@@ -739,12 +911,7 @@ const ProfessionalGroupPlans: React.FC = () => {
                                        <Clock className="h-3 w-3" /> {new Date(plan.uploadDate).toLocaleDateString('vi-VN')}
                                     </span>
                                  </div>
-                                 {/* Show revision reason */}
-                                 {(plan.approval?.status === 'rejected' || plan.approval?.status === 'needs_revision') && plan.approval.rejectionReason && (
-                                    <div className="mt-2 text-xs text-orange-600 bg-orange-50 px-2 py-1 rounded border border-orange-100">
-                                       <span className="font-semibold">Yêu cầu sửa:</span> {plan.approval.rejectionReason}
-                                    </div>
-                                 )}
+                                 {/* Show revision reason - MOVED TO MODAL */}
                               </div>
                            </div>
 
@@ -784,13 +951,7 @@ const ProfessionalGroupPlans: React.FC = () => {
                                     <MessageSquare className="h-4 w-4" />
                                     <span className="text-xs font-medium">{plan.commentCount}</span>
                                  </div>
-
-                                 <button
-                                    onClick={(e) => openDeleteModal(plan, e)}
-                                    className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors z-10"
-                                 >
-                                    <Trash2 className="h-4 w-4" />
-                                 </button>
+                                 {/* Delete button removed from list view */}
                               </div>
                            </div>
                         </div>
@@ -833,8 +994,11 @@ const ProfessionalGroupPlans: React.FC = () => {
 
                         {/* Content Card */}
                         <div
+                           id={`file-${minute.id}`} // Check ID for scroll
                            onClick={() => handleItemClick(minute)}
-                           className="bg-white rounded-lg border border-gray-200 p-4 hover:border-orange-300 hover:shadow-md transition-all cursor-pointer group relative pr-10"
+                           className={`bg-white rounded-lg border p-4 hover:shadow-md transition-all cursor-pointer group relative pr-10
+                              ${highlightFileId === minute.id ? 'ring-2 ring-orange-500 bg-orange-50 animate-pulse' : 'border-gray-200 hover:border-orange-300'}
+                           `}
                         >
                            <div className="flex justify-between items-start mb-2">
                               <div className="flex items-center gap-2 flex-wrap">
@@ -1044,23 +1208,6 @@ const ProfessionalGroupPlans: React.FC = () => {
                            <h2 className="text-lg font-bold text-gray-900 leading-tight">{selectedItem.title}</h2>
                         </div>
                         <div className="flex items-center gap-2">
-                           {/* Approval Buttons in Drawer */}
-                           {selectedItem && canApprove(selectedItem) && selectedItem.approval?.status !== 'approved' && (
-                              <div className="flex items-center gap-1 mr-2 border-r border-gray-200 pr-2">
-                                 <button
-                                    onClick={() => handleApprove(selectedItem)}
-                                    className="px-3 py-1.5 text-xs font-bold text-white bg-green-500 hover:bg-green-600 rounded-lg transition-colors shadow-sm flex items-center gap-1"
-                                 >
-                                    <CheckCircle2 className="h-4 w-4" /> Duyệt
-                                 </button>
-                                 <button
-                                    onClick={() => openRejectModal(selectedItem)}
-                                    className="px-3 py-1.5 text-xs font-bold text-white bg-amber-500 hover:bg-amber-600 rounded-lg transition-colors shadow-sm flex items-center gap-1"
-                                 >
-                                    <Edit3 className="h-4 w-4" /> Yêu cầu sửa
-                                 </button>
-                              </div>
-                           )}
 
                            {/* Edit Button - Only show for Word files and file owner */}
                            {selectedItem && isWordFile(selectedItem) && canEdit(selectedItem) && (
@@ -1127,68 +1274,108 @@ const ProfessionalGroupPlans: React.FC = () => {
                            </div>
                         </div>
 
-                        {/* Right: Discussion / Meta (Fixed Width) */}
-                        <div className="w-full md:w-72 lg:w-80 bg-white flex flex-col h-1/2 md:h-full flex-shrink-0">
-
+                        {/* Right Panel: Revision History */}
+                        <div className="w-full md:w-96 bg-gray-50 border-l border-gray-200 flex flex-col h-1/2 md:h-full flex-shrink-0">
                            {/* Meta Info */}
                            <div className="p-4 border-b border-gray-100 bg-white">
                               <div className="flex items-center justify-between mb-2">
                                  <span className="text-xs text-gray-500">Người đăng</span>
-                                 <span className="text-xs font-bold text-gray-800">{selectedItem.uploader}</span>
+                                 <span className="text-xs font-bold text-gray-800">{selectedItem.author || 'Không rõ'}</span>
                               </div>
                               <div className="flex items-center justify-between">
                                  <span className="text-xs text-gray-500">Ngày tải lên</span>
-                                 <span className="text-xs font-bold text-gray-800">{new Date(selectedItem.uploadDate).toLocaleDateString('vi-VN')}</span>
+                                 <span className="text-xs font-bold text-gray-800">{new Date(selectedItem.uploadDate || selectedItem.createdAt || Date.now()).toLocaleDateString('vi-VN')}</span>
                               </div>
                            </div>
 
-                           {/* Chat Section */}
-                           <div className="flex-1 overflow-y-auto p-4 bg-white">
-                              <h3 className="text-sm font-bold text-gray-800 mb-4 flex items-center gap-2 sticky top-0 bg-white pb-2 z-10">
-                                 <MessageSquare className="h-4 w-4 text-orange-500" /> Ý kiến chỉ đạo & Góp ý
-                              </h3>
+                           <div className="p-4 bg-white border-b border-gray-100 shadow-sm flex items-center gap-2">
+                              <MessageSquare className="h-5 w-5 text-gray-500" />
+                              <h3 className="font-bold text-gray-800">Lịch sử Yêu cầu & Phản hồi</h3>
+                           </div>
 
-                              <div className="space-y-4 mb-4">
-                                 {/* Use mock comments or empty state */}
-                                 {(selectedItem as any).comments && (selectedItem as any).comments.length > 0 ? (
-                                    (selectedItem as any).comments.map((c: Comment) => (
-                                       <div key={c.id} className="flex gap-3">
-                                          <div className={`h-8 w-8 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 border ${c.type === 'response'
-                                                ? 'bg-green-100 text-green-700 border-green-200'
-                                                : 'bg-orange-100 text-orange-700 border-orange-200'
-                                             }`}>
-                                             {c.userName.charAt(0)}
+                           {/* List of Revisions */}
+                           <div className="flex-1 overflow-y-auto p-4 space-y-4 font-sans">
+
+                              {/* Show initial alert if needs revision (Hide if matches last history item) */}
+                              {selectedItem.approval?.status === 'needs_revision' &&
+                                 selectedItem.approval?.rejectionReason &&
+                                 // Check if the latest comment is already showing this request
+                                 !(selectedItem.comments?.length &&
+                                    selectedItem.comments[selectedItem.comments.length - 1].type === 'request' &&
+                                    selectedItem.comments[selectedItem.comments.length - 1].content === selectedItem.approval.rejectionReason) && (
+                                    <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-4 group relative">
+                                       <div className="flex justify-between items-start">
+                                          <div>
+                                             <h4 className="text-xs font-bold text-amber-800 uppercase mb-1 flex items-center gap-1">
+                                                <AlertCircle className="h-3 w-3" /> Yêu cầu sửa hiện tại
+                                             </h4>
+                                             <p className="text-sm text-amber-900">{selectedItem.approval.rejectionReason}</p>
                                           </div>
-                                          <div className={`rounded-xl rounded-tl-none p-3 flex-1 group border relative ${c.type === 'response'
-                                                ? 'bg-green-50 border-green-100'
-                                                : 'bg-white border-gray-100 shadow-sm'
-                                             }`}>
-                                             <div className="flex items-baseline justify-between mb-1">
-                                                <div className="flex items-center gap-2">
-                                                   <span className="text-xs font-bold text-gray-900">{c.userName}</span>
-                                                   {/* Role Badge */}
-                                                   <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${c.type === 'response'
-                                                         ? 'bg-green-200 text-green-800'
-                                                         : 'bg-orange-200 text-orange-800'
-                                                      }`}>
-                                                      {c.type === 'response' ? 'Phản hồi' : 'Chỉ đạo'}
-                                                   </span>
-                                                </div>
 
-                                                {/* Comment Actions: Only owner can delete/edit */}
-                                                {user && (c.userId === user.id) && (
-                                                   <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                          {/* Helper Actions for Reviewer (Edit/Delete Active Request) */}
+                                          {canApprove(selectedItem) && (
+                                             <div className="flex gap-1 ml-2">
+                                                <button
+                                                   onClick={() => handleEditActiveRevision(selectedItem)}
+                                                   className="p-1 text-amber-700 hover:bg-amber-100 rounded transition-colors"
+                                                   title="Sửa nội dung yêu cầu"
+                                                >
+                                                   <Edit3 className="h-3 w-3" />
+                                                </button>
+                                                <button
+                                                   onClick={() => handleDeleteActiveRevision(selectedItem)}
+                                                   className="p-1 text-amber-700 hover:bg-amber-100 hover:text-red-600 rounded transition-colors"
+                                                   title="Hủy bỏ yêu cầu này"
+                                                >
+                                                   <Trash2 className="h-3 w-3" />
+                                                </button>
+                                             </div>
+                                          )}
+                                       </div>
+                                    </div>
+                                 )}
+
+                              {(!selectedItem.comments || selectedItem.comments.length === 0) ? (
+                                 <div className="text-center py-10 text-gray-400">
+                                    <div className="bg-gray-100 rounded-full w-12 h-12 flex items-center justify-center mx-auto mb-3">
+                                       <CheckCircle className="h-6 w-6 text-gray-300" />
+                                    </div>
+                                    <p className="text-sm">Chưa có lịch sử chỉnh sửa nào.</p>
+                                 </div>
+                              ) : (
+                                 selectedItem.comments.map((comment) => (
+                                    <div key={comment.id} className={`flex gap-3 ${comment.type === 'response' ? 'flex-row-reverse' : ''}`}>
+                                       <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 text-xs font-bold text-white shadow-sm
+                                          ${comment.type === 'request' ? 'bg-amber-500' : 'bg-blue-500'}
+                                       `}>
+                                          {comment.userName.charAt(0)}
+                                       </div>
+                                       <div className={`flex-1 max-w-[85%] space-y-1`}>
+                                          <div className={`p-3 rounded-2xl shadow-sm text-sm relative group
+                                             ${comment.type === 'request' ? 'bg-amber-50 border border-amber-100 text-gray-800 rounded-tl-none' :
+                                                comment.type === 'response' ? 'bg-blue-50 border border-blue-100 text-gray-800 rounded-tr-none' :
+                                                   'bg-white border border-gray-200 text-gray-600'}
+                                          `}>
+                                             <div className="flex justify-between items-start mb-1">
+                                                <span className={`text-xs font-bold ${comment.type === 'request' ? 'text-amber-700' : 'text-blue-700'}`}>
+                                                   {comment.userName}
+                                                   {comment.type === 'request' && <span className="ml-1 text-[10px] bg-amber-200 px-1 rounded text-amber-800">Yêu cầu sửa</span>}
+                                                </span>
+
+                                                {/* Edit/Delete Actions */}
+                                                {(comment.userId === user?.id) && (
+                                                   <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity absolute right-2 top-2 bg-white/50 rounded-lg p-0.5 backdrop-blur-sm">
                                                       <button
-                                                         onClick={() => startEditingComment(c)}
-                                                         className="text-gray-400 hover:text-blue-500 p-1"
-                                                         title="Sửa góp ý"
+                                                         onClick={() => startEditingComment(comment)}
+                                                         className="p-1 hover:bg-gray-200 rounded text-gray-500 hover:text-blue-600"
+                                                         title="Sửa"
                                                       >
                                                          <Edit3 className="h-3 w-3" />
                                                       </button>
                                                       <button
-                                                         onClick={() => handleDeleteComment(c)}
-                                                         className="text-gray-400 hover:text-red-500 p-1"
-                                                         title="Xóa góp ý"
+                                                         onClick={() => handleDeleteComment(comment)}
+                                                         className="p-1 hover:bg-gray-200 rounded text-gray-500 hover:text-red-600"
+                                                         title="Xóa"
                                                       >
                                                          <Trash2 className="h-3 w-3" />
                                                       </button>
@@ -1196,75 +1383,89 @@ const ProfessionalGroupPlans: React.FC = () => {
                                                 )}
                                              </div>
 
-                                             {editingCommentId === c.id ? (
+                                             {/* Content */}
+                                             {editingCommentId === comment.id ? (
                                                 <div className="mt-2">
                                                    <textarea
+                                                      className="w-full text-sm border border-gray-300 rounded p-2 focus:ring-2 focus:ring-blue-500 outline-none"
                                                       value={editingContent}
                                                       onChange={(e) => setEditingContent(e.target.value)}
-                                                      className="w-full text-sm border border-gray-300 rounded-md p-2 focus:ring-2 focus:ring-orange-500 focus:border-transparent"
                                                       rows={2}
-                                                      autoFocus
                                                    />
-                                                   <div className="flex gap-2 mt-2 justify-end">
+                                                   <div className="flex justify-end gap-2 mt-2">
                                                       <button
                                                          onClick={() => setEditingCommentId(null)}
-                                                         className="text-xs px-2 py-1 text-gray-500 hover:bg-gray-200 rounded"
-                                                      >
-                                                         Hủy
-                                                      </button>
+                                                         className="text-xs px-2 py-1 bg-gray-200 rounded hover:bg-gray-300"
+                                                      >Hủy</button>
                                                       <button
-                                                         onClick={() => handleEditComment(c.id, selectedItem)}
-                                                         className="text-xs px-2 py-1 bg-orange-500 text-white rounded hover:bg-orange-600"
-                                                      >
-                                                         Lưu
-                                                      </button>
+                                                         onClick={() => handleEditComment(comment.id, selectedItem)}
+                                                         className="text-xs px-2 py-1 bg-blue-500 text-white rounded hover:bg-blue-600"
+                                                      >Lưu</button>
                                                    </div>
                                                 </div>
                                              ) : (
-                                                <p className="text-sm text-gray-800 whitespace-pre-wrap">{c.content}</p>
+                                                <p className="whitespace-pre-wrap">{comment.content}</p>
                                              )}
+
+                                             <p className="text-[10px] text-gray-400 mt-1 text-right">
+                                                {new Date(comment.timestamp).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })} - {new Date(comment.timestamp).toLocaleDateString('vi-VN')}
+                                                {comment.editedAt && <span className="italic ml-1">(đã sửa)</span>}
+                                             </p>
                                           </div>
                                        </div>
-                                    ))
-                                 ) : (
-                                    <div className="text-center py-6 text-gray-400 text-xs italic">
-                                       Chưa có góp ý nào.
                                     </div>
-                                 )}
-                                 <div ref={commentsEndRef} />
-                              </div>
+                                 ))
+                              )}
+                              <div ref={commentsEndRef} />
                            </div>
 
-                           {/* Comment Input - Restrict based on role/status */}
-                           {(canComment(selectedItem) || canRespond(selectedItem)) && (
-                              <div className="p-4 border-t border-gray-200 bg-gray-50">
-                                 <form onSubmit={handlePostComment} className="relative">
+                           {/* Input Area (Conditional) */}
+                           <div className="p-4 bg-white border-t border-gray-200">
+                              {selectedItem.approval?.status === 'needs_revision' && canRespond(selectedItem) ? (
+                                 /* 1. Show Response Input for Author if Needs Revision */
+                                 <form onSubmit={handleResponse} className="flex gap-2 relative">
                                     <input
                                        type="text"
-                                       className="w-full pl-4 pr-12 py-3 bg-white border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent shadow-sm"
-                                       placeholder={canComment(selectedItem) ? "Nhập nội dung chỉ đạo..." : "Nhập phản hồi..."}
                                        value={newComment}
                                        onChange={(e) => setNewComment(e.target.value)}
+                                       placeholder="Nhập phản hồi/giải trình của bạn..."
+                                       className="flex-1 bg-gray-50 border border-gray-300 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all shadow-sm"
                                     />
                                     <button
                                        type="submit"
                                        disabled={!newComment.trim()}
-                                       className="absolute right-2 top-1/2 transform -translate-y-1/2 p-1.5 bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:opacity-50 disabled:bg-gray-300 transition-all"
+                                       className="bg-blue-600 hover:bg-blue-700 text-white rounded-xl px-4 py-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-sm flex items-center justify-center"
                                     >
-                                       <Send className="h-4 w-4" />
+                                       <Send className="h-5 w-5" />
                                     </button>
                                  </form>
-                              </div>
-                           )}
-
-                           {/* If owner but cannot respond yet (no comments/revision) */}
-                           {canEdit(selectedItem) && !canRespond(selectedItem) && !canComment(selectedItem) && (
-                              <div className="p-4 border-t border-gray-200 bg-gray-50 text-center">
-                                 <p className="text-xs text-gray-400 italic">
-                                    Chức năng phản hồi sẽ mở khi có yêu cầu sửa đổi hoặc nhận xét từ Ban giám hiệu.
-                                 </p>
-                              </div>
-                           )}
+                              ) : selectedItem.approval?.status === 'pending' && canApprove(selectedItem) ? (
+                                 /* 2. Show Actions for Reviewer if Pending */
+                                 <div className="flex gap-2">
+                                    <button
+                                       onClick={() => handleApprove(selectedItem)}
+                                       className="flex-1 bg-green-500 hover:bg-green-600 text-white rounded-xl px-4 py-3 font-bold shadow-sm transition-all flex items-center justify-center gap-2"
+                                    >
+                                       <CheckCircle2 className="h-5 w-5" /> Duyệt ngay
+                                    </button>
+                                    <button
+                                       onClick={() => openRejectModal(selectedItem)}
+                                       className="flex-1 bg-amber-500 hover:bg-amber-600 text-white rounded-xl px-4 py-3 font-bold shadow-sm transition-all flex items-center justify-center gap-2"
+                                    >
+                                       <Edit3 className="h-5 w-5" /> Yêu cầu sửa
+                                    </button>
+                                 </div>
+                              ) : (
+                                 /* 3. Helper or Disabled State */
+                                 <div className="text-center text-xs text-gray-500 bg-gray-50 p-2 rounded-lg border border-dashed border-gray-200">
+                                    {selectedItem.approval?.status === 'approved'
+                                       ? "Hồ sơ đã được duyệt. Không thể chỉnh sửa thêm."
+                                       : !canRespond(selectedItem) && selectedItem.approval?.status === 'needs_revision'
+                                          ? "Đang chờ tác giả phản hồi..."
+                                          : "Hồ sơ đang chờ xử lý."}
+                                 </div>
+                              )}
+                           </div>
                         </div>
                      </div>
                   </div>
@@ -1460,6 +1661,39 @@ const ProfessionalGroupPlans: React.FC = () => {
                            className="px-4 py-2 text-sm font-bold text-white bg-red-600 rounded-lg hover:bg-red-700 shadow-md transition-colors"
                         >
                            Xóa góp ý
+                        </button>
+                     </div>
+                  </div>
+               </div>
+            </div>
+         )}
+
+         {/* Delete Active Revision Modal (Custom Toast-like Dialog) */}
+         {isDeleteRevisionModalOpen && (
+            <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
+               <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm overflow-hidden animate-in zoom-in-95 duration-200">
+                  <div className="p-6 text-center">
+                     <div className="w-12 h-12 bg-amber-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <AlertCircle className="h-6 w-6 text-amber-600" />
+                     </div>
+                     <h3 className="text-lg font-bold text-gray-900 mb-2">Hủy yêu cầu sửa?</h3>
+                     <p className="text-sm text-gray-500 mb-6">
+                        Bạn có chắc chắn muốn xóa yêu cầu sửa này? <br />
+                        Hồ sơ sẽ quay về trạng thái <span className="font-bold text-blue-600">'Chờ duyệt'</span>.
+                     </p>
+
+                     <div className="flex gap-3 justify-center">
+                        <button
+                           onClick={() => setIsDeleteRevisionModalOpen(false)}
+                           className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+                        >
+                           Không xóa
+                        </button>
+                        <button
+                           onClick={confirmDeleteActiveRevision}
+                           className="px-4 py-2 text-sm font-bold text-white bg-amber-600 rounded-lg hover:bg-amber-700 shadow-md transition-colors"
+                        >
+                           Đồng ý xóa
                         </button>
                      </div>
                   </div>

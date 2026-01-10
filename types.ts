@@ -66,7 +66,7 @@ export interface Comment {
   userRole: string;
   content: string;
   timestamp: string;
-  type?: 'comment' | 'response';  // comment = góp ý từ người duyệt, response = phản hồi từ GV
+  type?: 'comment' | 'response' | 'request';  // comment = góp ý, response = phản hồi, request = yêu cầu sửa
   editedAt?: string;
 }
 
