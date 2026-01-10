@@ -12,7 +12,7 @@ const Header: React.FC = () => {
   const location = useLocation();
   const navigate = useNavigate();
   const { user, logout } = useAuth();
-  const { notifications, unreadCount, markAllAsRead, markAsRead } = useNotification();
+  const { notifications, unreadCount, markAllAsRead, markAsRead, removeNotification } = useNotification();
 
   // State
   const [isOpen, setIsOpen] = useState(false); // User Menu
@@ -181,8 +181,11 @@ const Header: React.FC = () => {
                         key={item.id}
                         onClick={() => {
                           markAsRead(item.id);
+                          removeNotification(item.id); // Remove from list after viewing
                           if (item.targetPath) {
-                            navigate(item.targetPath);
+                            // Add highlight parameter for visual effect on target
+                            const separator = item.targetPath.includes('?') ? '&' : '?';
+                            navigate(`${item.targetPath}${separator}highlight=true`);
                             setIsNotifOpen(false);
                           }
                         }}

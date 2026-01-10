@@ -31,6 +31,7 @@ interface NotificationContextType {
   notifications: NotificationItem[];
   markAsRead: (id: string) => void;
   markAllAsRead: () => void;
+  removeNotification: (id: string) => void;
   unreadCount: number;
 }
 
@@ -200,6 +201,11 @@ export const NotificationProvider: React.FC<{ children: ReactNode }> = ({ childr
     });
   };
 
+  // Remove notification from local list (disappear after click)
+  const removeNotification = (id: string) => {
+    setNotifications(prev => prev.filter(n => n.id !== id));
+  };
+
   const unreadCount = notifications.filter(n => !n.isRead).length;
 
   return (
@@ -208,6 +214,7 @@ export const NotificationProvider: React.FC<{ children: ReactNode }> = ({ childr
       notifications,
       markAsRead,
       markAllAsRead,
+      removeNotification,
       unreadCount
     }}>
       {children}

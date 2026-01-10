@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { MOCK_CLASSES } from '../data/mockData';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import {
    ChevronRight,
    Upload,
@@ -99,8 +99,12 @@ import AdvancedWordEditor from '../components/AdvancedWordEditor';
 const ClassRecords: React.FC = () => {
    const { classId } = useParams<{ classId: string }>();
    const navigate = useNavigate();
+   const [searchParams, setSearchParams] = useSearchParams();
    const { user } = useAuth();
    const { addToast } = useNotification();
+
+   // Highlight state for notification navigation
+   const [highlightFileId, setHighlightFileId] = useState<string | null>(null);
 
    // Helper function để so sánh accessScope linh hoạt
    const matchesClassScope = (scope: string | undefined, classId: string, className: string | undefined): boolean => {
@@ -574,6 +578,42 @@ const ClassRecords: React.FC = () => {
          }
       }
    }, [user, classId, navigate, currentClass, loading]);
+
+   // Handle notification navigation - switch to correct tab and highlight file
+   useEffect(() => {
+      const tab = searchParams.get('tab');
+      const fileId = searchParams.get('fileId');
+      const highlight = searchParams.get('highlight');
+
+      console.log('[ClassRecords] URL Params:', { tab, fileId, highlight });
+
+      if (tab === 'plan') {
+         setActiveTab('plan');
+         setPlanSubTab('week'); // Default to week view where most files are
+      }
+
+      if (fileId && highlight === 'true') {
+         console.log('[ClassRecords] Setting highlight for file:', fileId);
+         setHighlightFileId(fileId);
+
+         // Auto-expand the folder containing this file
+         const folderWithFile = folders.find(f => f.files.some(file => file.id === fileId));
+         if (folderWithFile) {
+            console.log('[ClassRecords] Auto-expanding folder:', folderWithFile.id);
+            setExpandedFolderId(folderWithFile.id);
+         }
+
+         // Clear highlight after 3 seconds
+         const timer = setTimeout(() => {
+            setHighlightFileId(null);
+         }, 3000);
+
+         // Clear URL params after processing
+         setSearchParams({}, { replace: true });
+
+         return () => clearTimeout(timer);
+      }
+   }, [searchParams, setSearchParams, folders]);
 
    if (loading) {
       return (
@@ -1094,8 +1134,17 @@ const ClassRecords: React.FC = () => {
                                           {visibleFiles.map((file) => (
                                              <div
                                                 key={file.id}
-                                                onClick={(e) => handleFileClick(file, e)}
-                                                className="flex items-center justify-between p-3 bg-white rounded-lg border border-gray-100 shadow-sm hover:border-amber-300 hover:shadow-md cursor-pointer group transition-all"
+                                                onClick={(e) => {
+                                                   // Clear highlight when clicked
+                                                   if (highlightFileId === file.id) {
+                                                      setHighlightFileId(null);
+                                                   }
+                                                   handleFileClick(file, e);
+                                                }}
+                                                className={`flex items-center justify-between p-3 bg-white rounded-lg border shadow-sm hover:border-amber-300 hover:shadow-md cursor-pointer group transition-all ${highlightFileId === file.id
+                                                   ? 'border-red-400 bg-red-50 animate-pulse ring-2 ring-red-300'
+                                                   : 'border-gray-100'
+                                                   }`}
                                              >
                                                 <div className="flex items-center gap-3">
                                                    {getFileIcon(file.type)}
@@ -1470,7 +1519,7 @@ const ClassRecords: React.FC = () => {
                                           createNotification('comment', user, {
                                              type: 'class',
                                              name: selectedFile.name,
-                                             targetPath: `/class/${classId}`,
+                                             targetPath: `/class/${classId}?tab=plan&fileId=${selectedFile.id}`,
                                              extraInfo: { classId, uploaderId: (selectedFile as any).uploaderId }
                                           });
 

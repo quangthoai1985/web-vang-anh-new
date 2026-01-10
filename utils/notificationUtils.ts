@@ -126,10 +126,10 @@ export const createNotification = async (
         }
 
         // Determine Sender Name
-        // Priority: Name -> Role Name -> Role Code
-        let finalSenderName = actor.name;
+        // Priority: fullName -> name -> Role Name -> Role Code
+        let finalSenderName = (actor as any).fullName || actor.name;
 
-        // If name is missing or looks like an internal role code, try to use Vietnamese Role Name
+        // If name is still missing or looks like an internal role code, try to use Vietnamese Role Name
         if (!finalSenderName || finalSenderName === actor.role || finalSenderName === 'head_teacher' || finalSenderName === 'vice_head_teacher') {
             finalSenderName = ROLE_NAMES[actor.role] || actor.role;
         }
