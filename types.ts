@@ -12,10 +12,10 @@ export interface DashboardCardData {
 }
 
 // Updated Roles based on requirements
-export type UserRole = 'admin' | 'vice_principal' | 'head_teacher' | 'vice_head_teacher' | 'teacher' | 'staff' | 'office_head';
+export type UserRole = 'admin' | 'principal' | 'vice_principal' | 'head_teacher' | 'vice_head_teacher' | 'teacher' | 'staff' | 'office_head';
 
 // Trạng thái phê duyệt kế hoạch
-export type ApprovalStatus = 'pending' | 'approved' | 'rejected';
+export type ApprovalStatus = 'pending' | 'approved' | 'rejected' | 'needs_revision';
 
 // Chi tiết phê duyệt - lưu vào kế hoạch
 export interface ApprovalInfo {
@@ -66,6 +66,8 @@ export interface Comment {
   userRole: string;
   content: string;
   timestamp: string;
+  type?: 'comment' | 'response';  // comment = góp ý từ người duyệt, response = phản hồi từ GV
+  editedAt?: string;
 }
 
 export interface OfficeDocument {

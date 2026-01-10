@@ -22,7 +22,8 @@ import {
    CheckCircle,
    Maximize2,
    XCircle,
-   Edit3
+   Edit3,
+   Lock
 } from 'lucide-react';
 import { Comment, ApprovalInfo, UserRole } from '../types';
 import { useAuth } from '../context/AuthContext';
@@ -40,10 +41,12 @@ interface GroupPlan {
    id: string;
    title: string;
    uploader: string;
+   uploaderId?: string; // ID người upload
    uploaderRole: UserRole; // Vai trò người upload để xác định ai được duyệt
    uploadDate: string;
    viewers: string[]; // Array of avatar/initials
    commentCount: number;
+   comments?: Comment[]; // List of comments
    type: 'plan';
    approval?: ApprovalInfo; // Thông tin phê duyệt
 }
@@ -53,6 +56,7 @@ interface MeetingMinute {
    date: string; // For timeline
    title: string;
    uploader: string;
+   uploaderId?: string; // ID người upload
    uploaderRole: UserRole;
    fileType: 'word' | 'pdf';
    status: 'finalized' | 'draft'; // Đã chốt | Đang thảo luận
@@ -104,6 +108,14 @@ const ProfessionalGroupPlans: React.FC = () => {
    const [newComment, setNewComment] = useState('');
    const commentsEndRef = useRef<HTMLDivElement>(null);
 
+   // Comment Editing State
+   const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
+   const [editingContent, setEditingContent] = useState('');
+
+   // Delete Comment Modal State
+   const [isDeleteCommentModalOpen, setIsDeleteCommentModalOpen] = useState(false);
+   const [commentToDelete, setCommentToDelete] = useState<Comment | null>(null);
+
    // Upload Modal State
    const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
    const [uploadFile, setUploadFile] = useState<File | null>(null);
@@ -132,27 +144,36 @@ const ProfessionalGroupPlans: React.FC = () => {
 
    // Permission Check for Edit Button - Only author can edit their own files
    const canEdit = (item: GroupPlan | MeetingMinute): boolean => {
-      if (!user) {
-         console.log('[canEdit] No user logged in');
-         return false;
-      }
-      // Check by uploaderId (preferred) or uploader name (fallback)
+      if (!user) return false;
       const itemData = item as any;
       const isOwnerById = itemData.uploaderId && itemData.uploaderId === user.id;
       const isOwnerByName = item.uploader === user.fullName;
-
-      console.log('[canEdit] Checking:', {
-         'user.id': user.id,
-         'user.fullName': user.fullName,
-         'item.uploaderId': itemData.uploaderId,
-         'item.uploader': item.uploader,
-         isOwnerById,
-         isOwnerByName,
-         result: isOwnerById || isOwnerByName
-      });
-
       return isOwnerById || isOwnerByName;
    };
+
+   // Permission Check for Comment (Reviewer: Principal/Admin)
+   const canComment = (item: GroupPlan | MeetingMinute): boolean => {
+      if (!user) return false;
+      // Principal and Admin can comment on everything (Acting as Reviewer)
+      return ['principal', 'admin'].includes(user.role);
+   };
+
+   // Permission Check for Response (Uploader)
+   const canRespond = (item: GroupPlan | MeetingMinute): boolean => {
+      if (!user) return false;
+
+      // Use canEdit to check ownership as it already handles ID/Name fallback
+      const isOwner = canEdit(item);
+
+      // Allow response if: (1) Is Owner AND (2) (Needs Revision OR Has Comments)
+      // This prevents uploader from chatting freely unless there is a review action
+      const needsRevision = item.approval?.status === 'needs_revision';
+      const hasComments = (item.comments?.length || 0) > 0;
+
+      return isOwner && (needsRevision || hasComments);
+   };
+
+
 
    // Check if file is a Word document (editable)
    const isWordFile = (item: GroupPlan | MeetingMinute): boolean => {
@@ -185,24 +206,11 @@ const ProfessionalGroupPlans: React.FC = () => {
       addToast("Lưu thành công", "Tài liệu đã được cập nhật.", "success");
    };
 
-   // Kiểm tra quyền duyệt kế hoạch
+   // Kiểm tra quyền duyệt kế hoạch - Chỉ Hiệu trưởng mới được duyệt
    const canApprove = (item: GroupPlan | MeetingMinute): boolean => {
       if (!user) return false;
-
-      const uploaderRole = item.uploaderRole;
-      if (!uploaderRole) return false;
-
-      // Phó Hiệu trưởng duyệt cho Tổ trưởng + Tổ phó
-      if (user.role === 'vice_principal') {
-         return ['head_teacher', 'vice_head_teacher'].includes(uploaderRole);
-      }
-
-      // Tổ trưởng + Tổ phó duyệt cho Giáo viên
-      if (['head_teacher', 'vice_head_teacher'].includes(user.role)) {
-         return uploaderRole === 'teacher';
-      }
-
-      return false;
+      // Chỉ Hiệu trưởng (principal) hoặc Admin mới có quyền duyệt
+      return ['principal', 'admin'].includes(user.role);
    };
 
    // Xử lý duyệt kế hoạch
@@ -221,44 +229,93 @@ const ProfessionalGroupPlans: React.FC = () => {
             }
          });
 
-         addToast("Đã duyệt kế hoạch", `Kế hoạch "${item.title}" đã được phê duyệt.`, "success");
+         addToast("Đã duyệt", `Đã duyệt hồ sơ "${item.title}".`, "success");
+
+         // Notify uploader
+         await createNotification('system', user, {
+            type: 'group',
+            name: `Đã duyệt: ${item.title}`,
+            targetPath: '/professional-group-plans',
+            extraInfo: { uploaderId: (item as any).uploaderId }
+         });
       } catch (error) {
          console.error("Error approving plan:", error);
-         addToast("Lỗi", "Không thể duyệt kế hoạch. Vui lòng thử lại.", "error");
+         addToast("Lỗi", "Không thể duyệt hồ sơ. Vui lòng thử lại.", "error");
       }
    };
 
-   // Mở modal từ chối
+   // Xử lý chốt biên bản họp (Chỉ dành cho tác giả)
+   const handleFinalizeMinute = async (minute: MeetingMinute) => {
+      if (!user || minute.uploaderId !== user.id) return;
+
+      if (!window.confirm("Bạn có chắc chắn muốn CHỐT biên bản này? Sau khi chốt sẽ hiển thị trạng thái 'Đã chốt'.")) return;
+
+      try {
+         const docRef = doc(db, 'minutes', minute.id);
+         await updateDoc(docRef, {
+            status: 'finalized'
+         });
+
+         addToast("Đã chốt biên bản", "Biên bản họp đã được chuyển sang trạng thái Đã chốt.", "success");
+      } catch (error) {
+         console.error("Error finalizing minute:", error);
+         addToast("Lỗi", "Không thể chốt biên bản. Vui lòng thử lại.", "error");
+      }
+   };
+
+   // Mở modal yêu cầu sửa lại (thay cho rejection)
    const openRejectModal = (item: GroupPlan | MeetingMinute) => {
       setItemToReject(item);
       setRejectionReason('');
       setIsRejectModalOpen(true);
    };
 
-   // Xử lý từ chối kế hoạch
-   const handleReject = async () => {
+   // Xử lý yêu cầu sửa lại
+   const handleRequestRevision = async () => {
       if (!user || !itemToReject) return;
 
       try {
          const docRef = doc(db, 'plans', itemToReject.id);
+
+         const revisionComment: Comment = {
+            id: Date.now().toString(),
+            userId: user.id,
+            userName: user.fullName,
+            userRole: user.role,
+            content: rejectionReason || 'Yêu cầu chỉnh sửa lại.',
+            timestamp: new Date().toISOString(),
+            type: 'comment'
+         };
+
          await updateDoc(docRef, {
             approval: {
-               status: 'rejected',
+               status: 'needs_revision',
                reviewerId: user.id,
                reviewerName: user.fullName,
                reviewerRole: user.role,
                reviewedAt: new Date().toISOString(),
-               rejectionReason: rejectionReason || 'Không đạt yêu cầu'
-            }
+               rejectionReason: rejectionReason
+            },
+            comments: arrayUnion(revisionComment),
+            commentCount: (itemToReject.commentCount || 0) + 1
          });
 
-         addToast("Đã từ chối kế hoạch", `Kế hoạch "${itemToReject.title}" đã bị từ chối.`, "warning");
+         addToast("Đã gửi yêu cầu sửa", `Đã yêu cầu sửa lại hồ sơ "${itemToReject.title}".`, "success");
+
+         // Notify uploader
+         await createNotification('comment', user, {
+            type: 'group',
+            name: `Yêu cầu sửa: ${itemToReject.title}`,
+            targetPath: '/professional-group-plans',
+            extraInfo: { uploaderId: (itemToReject as any).uploaderId }
+         });
+
          setIsRejectModalOpen(false);
          setItemToReject(null);
          setRejectionReason('');
       } catch (error) {
-         console.error("Error rejecting plan:", error);
-         addToast("Lỗi", "Không thể từ chối kế hoạch. Vui lòng thử lại.", "error");
+         console.error("Error requesting revision:", error);
+         addToast("Lỗi", "Không thể gửi yêu cầu sửa. Vui lòng thử lại.", "error");
       }
    };
 
@@ -274,6 +331,15 @@ const ProfessionalGroupPlans: React.FC = () => {
       setIsDrawerOpen(true);
    };
 
+   // Permission Check for Deletion - Only author can delete
+   const canDelete = (item: GroupPlan | MeetingMinute): boolean => {
+      if (!user) return false;
+      const itemData = item as any;
+      const isOwnerById = itemData.uploaderId && itemData.uploaderId === user.id;
+      const isOwnerByName = item.uploader === user.fullName;
+      return isOwnerById || isOwnerByName;
+   };
+
    const openDeleteModal = (item: GroupPlan | MeetingMinute, e: React.MouseEvent) => {
       e.stopPropagation();
       setItemToDelete(item);
@@ -281,6 +347,13 @@ const ProfessionalGroupPlans: React.FC = () => {
    };
 
    const confirmDelete = async () => {
+      // Permission safeguarding
+      if (itemToDelete && !canDelete(itemToDelete)) {
+         addToast("Không có quyền", "Bạn không thể xóa tài liệu của người khác.", "error");
+         setIsDeleteModalOpen(false);
+         return;
+      }
+
       if (itemToDelete) {
          try {
             await deleteDoc(doc(db, 'plans', itemToDelete.id));
@@ -305,13 +378,24 @@ const ProfessionalGroupPlans: React.FC = () => {
       e.preventDefault();
       if (!newComment.trim() || !selectedItem || !user) return;
 
+      // Determine comment type based on role
+      // If user is Reviewer (Principal/Admin) -> 'comment'
+      // If user is Uploader -> 'response'
+      const isReviewer = canComment(selectedItem);
+      const isUploader = (selectedItem as any).uploaderId === user.id;
+
+      // Fallback: Default to 'comment' if logic ambiguous, but strictly prioritize 'response' for uploader if they are NOT the reviewer (or if self-reviewing?)
+      // Actually, if Principal uploads, they are both. But generally 'comment' is for direction.
+      const type = isUploader && !isReviewer ? 'response' : 'comment';
+
       const comment: Comment = {
          id: Date.now().toString(),
          userId: user.id,
          userName: user.fullName,
          userRole: user.role,
          content: newComment,
-         timestamp: new Date().toISOString()
+         timestamp: new Date().toISOString(),
+         type: type as 'comment' | 'response'
       };
 
       try {
@@ -330,13 +414,90 @@ const ProfessionalGroupPlans: React.FC = () => {
          await createNotification('comment', user, {
             type: 'group',
             name: selectedItem.title,
-            targetPath: '/professional-group-plans'
+            targetPath: '/professional-group-plans',
+            extraInfo: { uploaderId: (selectedItem as any).uploaderId }
          });
 
       } catch (error) {
          console.error("Error adding comment: ", error);
          addToast("Lỗi", "Không thể gửi góp ý.", "error");
       }
+   };
+
+   // --- Comment Management (Edit/Delete) ---
+   // --- Comment Management (Edit/Delete) ---
+   const handleDeleteComment = (comment: Comment) => {
+      setCommentToDelete(comment);
+      setIsDeleteCommentModalOpen(true);
+   };
+
+   const confirmDeleteComment = async () => {
+      if (!user || !commentToDelete || !selectedItem) return;
+
+      try {
+         const docRef = doc(db, 'plans', selectedItem.id);
+         const updatedComments = selectedItem.comments!.filter(c => c.id !== commentToDelete.id);
+
+         await updateDoc(docRef, {
+            comments: updatedComments,
+            commentCount: updatedComments.length
+         });
+
+         addToast("Đã xóa", "Góp ý đã được xóa.", "success");
+
+         // Notify about deletion
+         await createNotification('comment', user, {
+            type: 'group',
+            name: `Đã xóa góp ý: ${selectedItem.title}`,
+            targetPath: '/professional-group-plans',
+            extraInfo: { uploaderId: (selectedItem as any).uploaderId }
+         });
+
+         setIsDeleteCommentModalOpen(false);
+         setCommentToDelete(null);
+
+      } catch (error) {
+         console.error("Error deleting comment:", error);
+         addToast("Lỗi", "Không thể xóa góp ý.", "error");
+      }
+   };
+
+   const handleEditComment = async (commentId: string, item: GroupPlan | MeetingMinute) => {
+      if (!user || !editingContent.trim()) return;
+
+      try {
+         const docRef = doc(db, 'plans', item.id);
+         const updatedComments = item.comments!.map(c =>
+            c.id === commentId
+               ? { ...c, content: editingContent, editedAt: new Date().toISOString() }
+               : c
+         );
+
+         await updateDoc(docRef, {
+            comments: updatedComments
+         });
+
+         addToast("Đã cập nhật", "Góp ý đã được chỉnh sửa.", "success");
+         setEditingCommentId(null);
+         setEditingContent('');
+
+         // Notify about edit
+         await createNotification('comment', user, {
+            type: 'group',
+            name: `Đã sửa góp ý: ${item.title}`,
+            targetPath: '/professional-group-plans',
+            extraInfo: { uploaderId: (item as any).uploaderId }
+         });
+
+      } catch (error) {
+         console.error("Error editing comment:", error);
+         addToast("Lỗi", "Không thể chỉnh sửa góp ý.", "error");
+      }
+   };
+
+   const startEditingComment = (comment: Comment) => {
+      setEditingCommentId(comment.id);
+      setEditingContent(comment.content);
    };
 
    // --- Upload Handlers ---
@@ -563,9 +724,9 @@ const ProfessionalGroupPlans: React.FC = () => {
                                           <CheckCircle2 className="h-3 w-3" /> Đã duyệt
                                        </span>
                                     )}
-                                    {plan.approval?.status === 'rejected' && (
-                                       <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-100 text-red-700 uppercase" title={plan.approval.rejectionReason}>
-                                          <XCircle className="h-3 w-3" /> Từ chối
+                                    {(plan.approval?.status === 'rejected' || plan.approval?.status === 'needs_revision') && (
+                                       <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-orange-100 text-orange-700 uppercase" title={plan.approval.rejectionReason}>
+                                          <Edit3 className="h-3 w-3" /> Cần sửa
                                        </span>
                                     )}
                                  </div>
@@ -578,10 +739,10 @@ const ProfessionalGroupPlans: React.FC = () => {
                                        <Clock className="h-3 w-3" /> {new Date(plan.uploadDate).toLocaleDateString('vi-VN')}
                                     </span>
                                  </div>
-                                 {/* Show rejection reason if rejected */}
-                                 {plan.approval?.status === 'rejected' && plan.approval.rejectionReason && (
-                                    <div className="mt-2 text-xs text-red-600 bg-red-50 px-2 py-1 rounded">
-                                       <span className="font-semibold">Lý do:</span> {plan.approval.rejectionReason}
+                                 {/* Show revision reason */}
+                                 {(plan.approval?.status === 'rejected' || plan.approval?.status === 'needs_revision') && plan.approval.rejectionReason && (
+                                    <div className="mt-2 text-xs text-orange-600 bg-orange-50 px-2 py-1 rounded border border-orange-100">
+                                       <span className="font-semibold">Yêu cầu sửa:</span> {plan.approval.rejectionReason}
                                     </div>
                                  )}
                               </div>
@@ -600,9 +761,9 @@ const ProfessionalGroupPlans: React.FC = () => {
                                     </button>
                                     <button
                                        onClick={(e) => { e.stopPropagation(); openRejectModal(plan); }}
-                                       className="px-3 py-1.5 text-xs font-bold text-white bg-red-500 hover:bg-red-600 rounded-lg transition-colors shadow-sm flex items-center gap-1"
+                                       className="px-3 py-1.5 text-xs font-bold text-white bg-amber-500 hover:bg-amber-600 rounded-lg transition-colors shadow-sm flex items-center gap-1"
                                     >
-                                       <XCircle className="h-3.5 w-3.5" /> Từ chối
+                                       <Edit3 className="h-3.5 w-3.5" /> Yêu cầu sửa
                                     </button>
                                  </div>
                               )}
@@ -697,9 +858,9 @@ const ProfessionalGroupPlans: React.FC = () => {
                                        <CheckCircle2 className="h-3 w-3" /> Đã duyệt
                                     </span>
                                  )}
-                                 {minute.approval?.status === 'rejected' && (
-                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-50 text-red-600 border border-red-200" title={minute.approval.rejectionReason}>
-                                       <XCircle className="h-3 w-3" /> Từ chối
+                                 {(minute.approval?.status === 'rejected' || minute.approval?.status === 'needs_revision') && (
+                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-orange-50 text-orange-600 border border-orange-200" title={minute.approval.rejectionReason}>
+                                       <Edit3 className="h-3 w-3" /> Cần sửa
                                     </span>
                                  )}
                               </div>
@@ -714,9 +875,9 @@ const ProfessionalGroupPlans: React.FC = () => {
                                     </button>
                                     <button
                                        onClick={(e) => { e.stopPropagation(); openRejectModal(minute); }}
-                                       className="px-2 py-1 text-[10px] font-bold text-white bg-red-500 hover:bg-red-600 rounded transition-colors flex items-center gap-0.5"
+                                       className="px-2 py-1 text-[10px] font-bold text-white bg-amber-500 hover:bg-amber-600 rounded transition-colors flex items-center gap-0.5"
                                     >
-                                       <XCircle className="h-3 w-3" /> Từ chối
+                                       <Edit3 className="h-3 w-3" /> Yêu cầu sửa
                                     </button>
                                  </div>
                               )}
@@ -727,9 +888,9 @@ const ProfessionalGroupPlans: React.FC = () => {
                            </h3>
 
                            {/* Show rejection reason if rejected */}
-                           {minute.approval?.status === 'rejected' && minute.approval.rejectionReason && (
-                              <div className="mb-3 text-xs text-red-600 bg-red-50 px-2 py-1 rounded">
-                                 <span className="font-semibold">Lý do:</span> {minute.approval.rejectionReason}
+                           {(minute.approval?.status === 'rejected' || minute.approval?.status === 'needs_revision') && minute.approval.rejectionReason && (
+                              <div className="mb-3 text-xs text-orange-600 bg-orange-50 px-2 py-1 rounded border border-orange-100">
+                                 <span className="font-semibold">Yêu cầu sửa:</span> {minute.approval.rejectionReason}
                               </div>
                            )}
 
@@ -751,13 +912,30 @@ const ProfessionalGroupPlans: React.FC = () => {
                               </span>
                            </div>
 
-                           {/* Timeline Item Delete Button (Absolute positioned) */}
-                           <button
-                              onClick={(e) => openDeleteModal(minute, e)}
-                              className="absolute top-2 right-2 p-1.5 text-gray-300 hover:text-red-600 hover:bg-red-50 rounded-full transition-colors z-10"
-                           >
-                              <Trash2 className="h-4 w-4" />
-                           </button>
+                           {/* Timeline Item Actions (Absolute positioned) */}
+                           <div className="absolute top-2 right-2 flex gap-1 z-10">
+                              {/* Finalize Button - Only Author & Not Finalized */}
+                              {canDelete(minute) && minute.status !== 'finalized' && (
+                                 <button
+                                    onClick={(e) => { e.stopPropagation(); handleFinalizeMinute(minute); }}
+                                    className="p-1.5 text-gray-400 hover:text-green-600 hover:bg-green-50 rounded-full transition-colors"
+                                    title="Chốt biên bản"
+                                 >
+                                    <Lock className="h-4 w-4" />
+                                 </button>
+                              )}
+
+                              {/* Delete Button - Only Author */}
+                              {canDelete(minute) && (
+                                 <button
+                                    onClick={(e) => openDeleteModal(minute, e)}
+                                    className="p-1.5 text-gray-300 hover:text-red-600 hover:bg-red-50 rounded-full transition-colors"
+                                    title="Xóa tài liệu"
+                                 >
+                                    <Trash2 className="h-4 w-4" />
+                                 </button>
+                              )}
+                           </div>
                         </div>
                      </div>
                   ))}
@@ -799,27 +977,27 @@ const ProfessionalGroupPlans: React.FC = () => {
             </div>
          )}
 
-         {/* Rejection Confirmation Modal */}
+         {/* Request Revision Modal */}
          {isRejectModalOpen && itemToReject && (
             <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
                <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200">
                   <div className="p-6">
-                     <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                        <XCircle className="h-8 w-8 text-red-600" />
+                     <div className="w-16 h-16 bg-amber-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <Edit3 className="h-8 w-8 text-amber-600" />
                      </div>
-                     <h3 className="text-lg font-bold text-gray-900 mb-2 text-center">Xác nhận từ chối kế hoạch?</h3>
+                     <h3 className="text-lg font-bold text-gray-900 mb-2 text-center">Yêu cầu sửa lại?</h3>
                      <p className="text-sm text-gray-500 mb-4 text-center">
-                        Bạn sắp từ chối kế hoạch <span className="font-semibold text-gray-800">"{itemToReject.title}"</span>
+                        Bạn đang yêu cầu chỉnh sửa cho <span className="font-semibold text-gray-800">"{itemToReject.title}"</span>
                      </p>
 
                      <div className="mb-4">
                         <label className="block text-sm font-medium text-gray-700 mb-2">
-                           Lý do từ chối <span className="text-red-500">*</span>
+                           Nội dung cần chỉnh sửa <span className="text-red-500">*</span>
                         </label>
                         <textarea
-                           className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-red-500 focus:border-red-500 outline-none transition-all resize-none"
-                           rows={3}
-                           placeholder="Nhập lý do từ chối để người gửi biết cần chỉnh sửa gì..."
+                           className="w-full border border-amber-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-amber-500 focus:border-amber-500 outline-none transition-all resize-none"
+                           rows={4}
+                           placeholder="Nhập chi tiết các điểm cần sửa..."
                            value={rejectionReason}
                            onChange={(e) => setRejectionReason(e.target.value)}
                         />
@@ -833,310 +1011,462 @@ const ProfessionalGroupPlans: React.FC = () => {
                            Hủy bỏ
                         </button>
                         <button
-                           onClick={handleReject}
+                           onClick={handleRequestRevision}
                            disabled={!rejectionReason.trim()}
-                           className="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 shadow-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                           className="px-4 py-2 text-sm font-bold text-white bg-amber-500 rounded-lg hover:bg-amber-600 shadow-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                         >
-                           Xác nhận từ chối
+                           <Send className="h-4 w-4 mr-1 inline" /> Gửi yêu cầu
                         </button>
                      </div>
                   </div>
                </div>
             </div>
          )}
+
 
          {/* --- DRAWER / PANEL (Interaction) --- */}
-         {isDrawerOpen && selectedItem && (
-            <div className="fixed inset-0 z-50 overflow-hidden flex justify-end">
-               <div
-                  className="absolute inset-0 bg-gray-900/40 backdrop-blur-sm transition-opacity"
-                  onClick={() => setIsDrawerOpen(false)}
-               ></div>
+         {
+            isDrawerOpen && selectedItem && (
+               <div className="fixed inset-0 z-50 overflow-hidden flex justify-end">
+                  <div
+                     className="absolute inset-0 bg-gray-900/40 backdrop-blur-sm transition-opacity"
+                     onClick={() => setIsDrawerOpen(false)}
+                  ></div>
 
-               <div className="relative w-full max-w-6xl bg-white h-full shadow-2xl flex flex-col animate-in slide-in-from-right duration-300">
+                  <div className="relative w-full max-w-6xl bg-white h-full shadow-2xl flex flex-col animate-in slide-in-from-right duration-300">
 
-                  {/* Drawer Header */}
-                  <div className="px-6 py-4 border-b border-orange-100 flex justify-between items-start bg-orange-50/30 flex-shrink-0">
-                     <div>
-                        <span className="text-[10px] font-bold text-orange-600 uppercase tracking-wider mb-1 block">
-                           {selectedItem.type === 'plan' ? 'Kế hoạch' : 'Biên bản họp'}
-                        </span>
-                        <h2 className="text-lg font-bold text-gray-900 leading-tight">{selectedItem.title}</h2>
-                     </div>
-                     <div className="flex items-center gap-2">
-                        {/* Edit Button - Only show for Word files and file owner */}
-                        {selectedItem && isWordFile(selectedItem) && canEdit(selectedItem) && (
-                           <button
-                              onClick={(e) => handleOpenWordEditor(selectedItem, e)}
-                              className="p-2 text-gray-500 hover:text-orange-600 hover:bg-orange-50 rounded-lg transition-colors flex items-center gap-1"
-                              title="Chỉnh sửa file Word"
-                           >
-                              <Edit3 className="h-5 w-5" />
-                              <span className="text-xs font-medium hidden md:inline">Chỉnh sửa</span>
-                           </button>
-                        )}
-                        <button className="p-2 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors" title="Tải xuống">
-                           <Download className="h-5 w-5" />
-                        </button>
-                        <button onClick={() => setIsDrawerOpen(false)} className="p-2 text-gray-400 hover:text-gray-600 rounded-full hover:bg-gray-100">
-                           <X className="h-5 w-5" />
-                        </button>
-                     </div>
-                  </div>
-
-                  {/* Content Body - Split View */}
-                  <div className="flex-1 overflow-hidden flex flex-col md:flex-row">
-
-                     {/* Left: Preview Area (Scrollable) */}
-                     <div className="flex-1 overflow-hidden bg-gray-100 border-b md:border-b-0 md:border-r border-gray-200 relative flex flex-col">
-                        {/* Floating Action for Preview */}
-                        <div className="absolute top-4 right-6 flex gap-2 z-10">
-                           <button
-                              onClick={() => setIsFullScreenPreviewOpen(true)}
-                              className="bg-white/80 backdrop-blur p-1.5 rounded-md shadow-sm text-gray-600 hover:text-orange-600 border border-gray-200 hover:scale-110 transition-all"
-                              title="Phóng to toàn màn hình"
-                           >
-                              <Maximize2 className="h-4 w-4" />
-                           </button>
-                        </div>
-
-                        {/* Render Dynamic Preview - Full Height */}
-                        <div className="flex-1 w-full h-full">
-                           {renderFilePreview(false)}
-                        </div>
-                     </div>
-
-                     {/* Right: Discussion / Meta (Fixed Width) */}
-                     <div className="w-full md:w-72 lg:w-80 bg-white flex flex-col h-1/2 md:h-full flex-shrink-0">
-
-                        {/* Meta Info */}
-                        <div className="p-4 border-b border-gray-100 bg-white">
-                           <div className="flex items-center justify-between mb-2">
-                              <span className="text-xs text-gray-500">Người đăng</span>
-                              <span className="text-xs font-bold text-gray-800">{selectedItem.uploader}</span>
-                           </div>
-                           <div className="flex items-center justify-between">
-                              <span className="text-xs text-gray-500">Ngày tải lên</span>
-                              <span className="text-xs font-bold text-gray-800">{new Date(selectedItem.uploadDate).toLocaleDateString('vi-VN')}</span>
-                           </div>
-                        </div>
-
-                        {/* Chat Section */}
-                        <div className="flex-1 overflow-y-auto p-4 bg-white">
-                           <h3 className="text-sm font-bold text-gray-800 mb-4 flex items-center gap-2 sticky top-0 bg-white pb-2 z-10">
-                              <MessageSquare className="h-4 w-4 text-orange-500" /> Ý kiến chỉ đạo & Góp ý
-                           </h3>
-
-                           <div className="space-y-4 mb-4">
-                              {/* Use mock comments or empty state */}
-                              {(selectedItem as any).comments && (selectedItem as any).comments.length > 0 ? (
-                                 (selectedItem as any).comments.map((c: Comment) => (
-                                    <div key={c.id} className="flex gap-3">
-                                       <div className="h-8 w-8 rounded-full bg-red-100 text-red-700 border border-red-200 flex items-center justify-center text-xs font-bold flex-shrink-0">
-                                          {c.userName.charAt(0)}
-                                       </div>
-                                       <div className="bg-gray-100 rounded-xl rounded-tl-none p-3 flex-1">
-                                          <div className="flex items-baseline gap-2 mb-1">
-                                             <span className="text-xs font-bold text-gray-900">{c.userName}</span>
-                                             <span className="text-[10px] text-gray-500">{c.userRole}</span>
-                                          </div>
-                                          <p className="text-sm text-gray-800">{c.content}</p>
-                                       </div>
-                                    </div>
-                                 ))
-                              ) : (
-                                 <div className="text-center py-6 text-gray-400 text-xs italic">
-                                    Chưa có góp ý nào.
-                                 </div>
-                              )}
-                              <div ref={commentsEndRef} />
-                           </div>
-                        </div>
-
-                        {/* Comment Input */}
-                        <div className="p-4 border-t border-gray-200 bg-gray-50">
-                           <form onSubmit={handlePostComment} className="relative">
-                              <input
-                                 type="text"
-                                 className="w-full pl-4 pr-12 py-3 bg-white border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent shadow-sm"
-                                 placeholder="Nhập nội dung chỉ đạo..."
-                                 value={newComment}
-                                 onChange={(e) => setNewComment(e.target.value)}
-                              />
-                              <button
-                                 type="submit"
-                                 disabled={!newComment.trim()}
-                                 className="absolute right-2 top-1/2 transform -translate-y-1/2 p-1.5 bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:opacity-50 disabled:bg-gray-300 transition-all"
-                              >
-                                 <Send className="h-4 w-4" />
-                              </button>
-                           </form>
-                        </div>
-                     </div>
-                  </div>
-               </div>
-            </div>
-         )}
-
-         {/* --- 4. UPLOAD MODAL (PROFESSIONAL GROUP) --- */}
-         {isUploadModalOpen && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
-               <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col animate-in zoom-in-95 duration-200">
-
-                  {/* Modal Header */}
-                  <div className="px-6 py-4 border-b border-orange-100 flex justify-between items-center bg-white">
-                     <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
-                        <Upload className="h-5 w-5 text-orange-600" />
-                        Thêm mới Hồ sơ Chuyên Môn
-                     </h3>
-                     <button
-                        onClick={() => setIsUploadModalOpen(false)}
-                        className="p-1 text-gray-400 hover:text-gray-600 rounded-full hover:bg-gray-100 transition-colors"
-                     >
-                        <X className="h-6 w-6" />
-                     </button>
-                  </div>
-
-                  {/* Modal Body */}
-                  <div className="p-6 space-y-5">
-
-                     {/* 1. File Type Selection (Radio/Pills) */}
-                     <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">Loại hồ sơ <span className="text-red-500">*</span></label>
-                        <div className="flex gap-2 bg-gray-100 p-1 rounded-lg">
-                           <button
-                              onClick={() => setUploadFormData({ ...uploadFormData, type: 'plan' })}
-                              className={`flex-1 py-2 px-4 text-sm font-medium rounded-md transition-all ${uploadFormData.type === 'plan'
-                                 ? 'bg-white text-orange-700 shadow-sm'
-                                 : 'text-gray-500 hover:text-gray-700'
-                                 }`}
-                           >
-                              Kế hoạch hoạt động
-                           </button>
-                           <button
-                              onClick={() => setUploadFormData({ ...uploadFormData, type: 'minute' })}
-                              className={`flex-1 py-2 px-4 text-sm font-medium rounded-md transition-all ${uploadFormData.type === 'minute'
-                                 ? 'bg-white text-orange-700 shadow-sm'
-                                 : 'text-gray-500 hover:text-gray-700'
-                                 }`}
-                           >
-                              Biên bản họp tổ
-                           </button>
-                        </div>
-                     </div>
-
-                     {/* 2. File Name */}
-                     <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Tên văn bản <span className="text-red-500">*</span></label>
-                        <input
-                           autoFocus
-                           type="text"
-                           className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none transition-all"
-                           placeholder="VD: Kế hoạch chuyên môn Tháng 11..."
-                           value={uploadFormData.name}
-                           onChange={(e) => setUploadFormData({ ...uploadFormData, name: e.target.value })}
-                        />
-                     </div>
-
-                     {/* 3. Date & Status Grid */}
-                     <div className="grid grid-cols-2 gap-4">
+                     {/* Drawer Header */}
+                     <div className="px-6 py-4 border-b border-orange-100 flex justify-between items-start bg-orange-50/30 flex-shrink-0">
                         <div>
-                           <label className="block text-sm font-medium text-gray-700 mb-1">
-                              {uploadFormData.type === 'minute' ? 'Ngày họp' : 'Thời gian áp dụng'}
-                           </label>
-                           <input
-                              type="date"
-                              className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none transition-all text-sm"
-                              value={uploadFormData.date}
-                              onChange={(e) => setUploadFormData({ ...uploadFormData, date: e.target.value })}
-                           />
+                           <span className="text-[10px] font-bold text-orange-600 uppercase tracking-wider mb-1 block">
+                              {selectedItem.type === 'plan' ? 'Kế hoạch' : 'Biên bản họp'}
+                           </span>
+                           <h2 className="text-lg font-bold text-gray-900 leading-tight">{selectedItem.title}</h2>
                         </div>
-                        <div>
-                           <label className="block text-sm font-medium text-gray-700 mb-1">Trạng thái</label>
-                           <select
-                              className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none transition-all bg-white text-sm"
-                              value={uploadFormData.status}
-                              onChange={(e) => setUploadFormData({ ...uploadFormData, status: e.target.value as any })}
-                           >
-                              <option value="draft">🟡 Đang thảo luận</option>
-                              <option value="finalized">🟢 Đã chốt / Ban hành</option>
-                           </select>
-                        </div>
-                     </div>
-
-                     {/* 4. Drag & Drop Zone */}
-                     <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Tệp đính kèm</label>
-                        <div
-                           onDrop={handleFileDrop}
-                           onDragOver={(e) => e.preventDefault()}
-                           className={`border-2 border-dashed rounded-xl p-8 flex flex-col items-center justify-center cursor-pointer transition-all group relative ${uploadFile ? 'border-orange-500 bg-orange-50' : 'border-gray-300 hover:bg-gray-50 hover:border-orange-400'}`}
-                        >
-                           <input
-                              type="file"
-                              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                              onChange={handleFileInput}
-                              accept=".pdf,.doc,.docx"
-                           />
-
-                           {uploadFile ? (
-                              <div className="flex flex-col items-center text-center animate-in zoom-in duration-300">
-                                 <CheckCircle className="h-10 w-10 text-orange-600 mb-2" />
-                                 <p className="text-sm font-bold text-orange-800 truncate max-w-[250px]">{uploadFile.name}</p>
-                                 <p className="text-xs text-orange-600 mt-1">{(uploadFile.size / 1024).toFixed(0)} KB - Đã sẵn sàng</p>
+                        <div className="flex items-center gap-2">
+                           {/* Approval Buttons in Drawer */}
+                           {selectedItem && canApprove(selectedItem) && selectedItem.approval?.status !== 'approved' && (
+                              <div className="flex items-center gap-1 mr-2 border-r border-gray-200 pr-2">
+                                 <button
+                                    onClick={() => handleApprove(selectedItem)}
+                                    className="px-3 py-1.5 text-xs font-bold text-white bg-green-500 hover:bg-green-600 rounded-lg transition-colors shadow-sm flex items-center gap-1"
+                                 >
+                                    <CheckCircle2 className="h-4 w-4" /> Duyệt
+                                 </button>
+                                 <button
+                                    onClick={() => openRejectModal(selectedItem)}
+                                    className="px-3 py-1.5 text-xs font-bold text-white bg-amber-500 hover:bg-amber-600 rounded-lg transition-colors shadow-sm flex items-center gap-1"
+                                 >
+                                    <Edit3 className="h-4 w-4" /> Yêu cầu sửa
+                                 </button>
                               </div>
-                           ) : (
-                              <div className="flex flex-col items-center text-center">
-                                 <div className="p-3 rounded-full mb-3 bg-orange-100 text-orange-600 transition-colors">
-                                    <CloudUpload className="h-8 w-8" />
-                                 </div>
-                                 <p className="text-sm font-medium text-gray-700">
-                                    Kéo thả file vào đây hoặc <span className="text-orange-600 underline">Bấm để chọn</span>
+                           )}
+
+                           {/* Edit Button - Only show for Word files and file owner */}
+                           {selectedItem && isWordFile(selectedItem) && canEdit(selectedItem) && (
+                              <button
+                                 onClick={(e) => handleOpenWordEditor(selectedItem, e)}
+                                 className="p-2 text-gray-500 hover:text-orange-600 hover:bg-orange-50 rounded-lg transition-colors flex items-center gap-1"
+                                 title="Chỉnh sửa file Word"
+                              >
+                                 <Edit3 className="h-5 w-5" />
+                                 <span className="text-xs font-medium hidden md:inline">Chỉnh sửa</span>
+                              </button>
+                           )}
+
+                           {/* Finalize Button for Minutes in Drawer */}
+                           {selectedItem.type === 'minute' && canDelete(selectedItem) && (selectedItem as MeetingMinute).status !== 'finalized' && (
+                              <button
+                                 onClick={() => handleFinalizeMinute(selectedItem as MeetingMinute)}
+                                 className="p-2 text-gray-500 hover:text-green-600 hover:bg-green-50 rounded-lg transition-colors flex items-center gap-1"
+                                 title="Chốt biên bản"
+                              >
+                                 <Lock className="h-5 w-5" />
+                                 <span className="text-xs font-medium hidden md:inline">Chốt</span>
+                              </button>
+                           )}
+                           <button className="p-2 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors" title="Tải xuống">
+                              <Download className="h-5 w-5" />
+                           </button>
+
+                           {/* Strict Delete Button - Only Author */}
+                           {canDelete(selectedItem) && (
+                              <button
+                                 onClick={(e) => openDeleteModal(selectedItem, e)}
+                                 className="p-2 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                                 title="Xóa tài liệu"
+                              >
+                                 <Trash2 className="h-5 w-5" />
+                              </button>
+                           )}
+                           <button onClick={() => setIsDrawerOpen(false)} className="p-2 text-gray-400 hover:text-gray-600 rounded-full hover:bg-gray-100">
+                              <X className="h-5 w-5" />
+                           </button>
+                        </div>
+                     </div>
+
+                     {/* Content Body - Split View */}
+                     <div className="flex-1 overflow-hidden flex flex-col md:flex-row">
+
+                        {/* Left: Preview Area (Scrollable) */}
+                        <div className="flex-1 overflow-hidden bg-gray-100 border-b md:border-b-0 md:border-r border-gray-200 relative flex flex-col">
+                           {/* Floating Action for Preview */}
+                           <div className="absolute top-4 right-6 flex gap-2 z-10">
+                              <button
+                                 onClick={() => setIsFullScreenPreviewOpen(true)}
+                                 className="bg-white/80 backdrop-blur p-1.5 rounded-md shadow-sm text-gray-600 hover:text-orange-600 border border-gray-200 hover:scale-110 transition-all"
+                                 title="Phóng to toàn màn hình"
+                              >
+                                 <Maximize2 className="h-4 w-4" />
+                              </button>
+                           </div>
+
+                           {/* Render Dynamic Preview - Full Height */}
+                           <div className="flex-1 w-full h-full">
+                              {renderFilePreview(false)}
+                           </div>
+                        </div>
+
+                        {/* Right: Discussion / Meta (Fixed Width) */}
+                        <div className="w-full md:w-72 lg:w-80 bg-white flex flex-col h-1/2 md:h-full flex-shrink-0">
+
+                           {/* Meta Info */}
+                           <div className="p-4 border-b border-gray-100 bg-white">
+                              <div className="flex items-center justify-between mb-2">
+                                 <span className="text-xs text-gray-500">Người đăng</span>
+                                 <span className="text-xs font-bold text-gray-800">{selectedItem.uploader}</span>
+                              </div>
+                              <div className="flex items-center justify-between">
+                                 <span className="text-xs text-gray-500">Ngày tải lên</span>
+                                 <span className="text-xs font-bold text-gray-800">{new Date(selectedItem.uploadDate).toLocaleDateString('vi-VN')}</span>
+                              </div>
+                           </div>
+
+                           {/* Chat Section */}
+                           <div className="flex-1 overflow-y-auto p-4 bg-white">
+                              <h3 className="text-sm font-bold text-gray-800 mb-4 flex items-center gap-2 sticky top-0 bg-white pb-2 z-10">
+                                 <MessageSquare className="h-4 w-4 text-orange-500" /> Ý kiến chỉ đạo & Góp ý
+                              </h3>
+
+                              <div className="space-y-4 mb-4">
+                                 {/* Use mock comments or empty state */}
+                                 {(selectedItem as any).comments && (selectedItem as any).comments.length > 0 ? (
+                                    (selectedItem as any).comments.map((c: Comment) => (
+                                       <div key={c.id} className="flex gap-3">
+                                          <div className={`h-8 w-8 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 border ${c.type === 'response'
+                                                ? 'bg-green-100 text-green-700 border-green-200'
+                                                : 'bg-orange-100 text-orange-700 border-orange-200'
+                                             }`}>
+                                             {c.userName.charAt(0)}
+                                          </div>
+                                          <div className={`rounded-xl rounded-tl-none p-3 flex-1 group border relative ${c.type === 'response'
+                                                ? 'bg-green-50 border-green-100'
+                                                : 'bg-white border-gray-100 shadow-sm'
+                                             }`}>
+                                             <div className="flex items-baseline justify-between mb-1">
+                                                <div className="flex items-center gap-2">
+                                                   <span className="text-xs font-bold text-gray-900">{c.userName}</span>
+                                                   {/* Role Badge */}
+                                                   <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${c.type === 'response'
+                                                         ? 'bg-green-200 text-green-800'
+                                                         : 'bg-orange-200 text-orange-800'
+                                                      }`}>
+                                                      {c.type === 'response' ? 'Phản hồi' : 'Chỉ đạo'}
+                                                   </span>
+                                                </div>
+
+                                                {/* Comment Actions: Only owner can delete/edit */}
+                                                {user && (c.userId === user.id) && (
+                                                   <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                      <button
+                                                         onClick={() => startEditingComment(c)}
+                                                         className="text-gray-400 hover:text-blue-500 p-1"
+                                                         title="Sửa góp ý"
+                                                      >
+                                                         <Edit3 className="h-3 w-3" />
+                                                      </button>
+                                                      <button
+                                                         onClick={() => handleDeleteComment(c)}
+                                                         className="text-gray-400 hover:text-red-500 p-1"
+                                                         title="Xóa góp ý"
+                                                      >
+                                                         <Trash2 className="h-3 w-3" />
+                                                      </button>
+                                                   </div>
+                                                )}
+                                             </div>
+
+                                             {editingCommentId === c.id ? (
+                                                <div className="mt-2">
+                                                   <textarea
+                                                      value={editingContent}
+                                                      onChange={(e) => setEditingContent(e.target.value)}
+                                                      className="w-full text-sm border border-gray-300 rounded-md p-2 focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                                                      rows={2}
+                                                      autoFocus
+                                                   />
+                                                   <div className="flex gap-2 mt-2 justify-end">
+                                                      <button
+                                                         onClick={() => setEditingCommentId(null)}
+                                                         className="text-xs px-2 py-1 text-gray-500 hover:bg-gray-200 rounded"
+                                                      >
+                                                         Hủy
+                                                      </button>
+                                                      <button
+                                                         onClick={() => handleEditComment(c.id, selectedItem)}
+                                                         className="text-xs px-2 py-1 bg-orange-500 text-white rounded hover:bg-orange-600"
+                                                      >
+                                                         Lưu
+                                                      </button>
+                                                   </div>
+                                                </div>
+                                             ) : (
+                                                <p className="text-sm text-gray-800 whitespace-pre-wrap">{c.content}</p>
+                                             )}
+                                          </div>
+                                       </div>
+                                    ))
+                                 ) : (
+                                    <div className="text-center py-6 text-gray-400 text-xs italic">
+                                       Chưa có góp ý nào.
+                                    </div>
+                                 )}
+                                 <div ref={commentsEndRef} />
+                              </div>
+                           </div>
+
+                           {/* Comment Input - Restrict based on role/status */}
+                           {(canComment(selectedItem) || canRespond(selectedItem)) && (
+                              <div className="p-4 border-t border-gray-200 bg-gray-50">
+                                 <form onSubmit={handlePostComment} className="relative">
+                                    <input
+                                       type="text"
+                                       className="w-full pl-4 pr-12 py-3 bg-white border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent shadow-sm"
+                                       placeholder={canComment(selectedItem) ? "Nhập nội dung chỉ đạo..." : "Nhập phản hồi..."}
+                                       value={newComment}
+                                       onChange={(e) => setNewComment(e.target.value)}
+                                    />
+                                    <button
+                                       type="submit"
+                                       disabled={!newComment.trim()}
+                                       className="absolute right-2 top-1/2 transform -translate-y-1/2 p-1.5 bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:opacity-50 disabled:bg-gray-300 transition-all"
+                                    >
+                                       <Send className="h-4 w-4" />
+                                    </button>
+                                 </form>
+                              </div>
+                           )}
+
+                           {/* If owner but cannot respond yet (no comments/revision) */}
+                           {canEdit(selectedItem) && !canRespond(selectedItem) && !canComment(selectedItem) && (
+                              <div className="p-4 border-t border-gray-200 bg-gray-50 text-center">
+                                 <p className="text-xs text-gray-400 italic">
+                                    Chức năng phản hồi sẽ mở khi có yêu cầu sửa đổi hoặc nhận xét từ Ban giám hiệu.
                                  </p>
-                                 <p className="text-xs text-gray-400 mt-1">Hỗ trợ PDF, Word (Tối đa 10MB)</p>
                               </div>
                            )}
                         </div>
                      </div>
+                  </div>
+               </div>
+            )
+         }
+
+         {/* --- 4. UPLOAD MODAL (PROFESSIONAL GROUP) --- */}
+         {
+            isUploadModalOpen && (
+               <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+                  <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col animate-in zoom-in-95 duration-200">
+
+                     {/* Modal Header */}
+                     <div className="px-6 py-4 border-b border-orange-100 flex justify-between items-center bg-white">
+                        <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                           <Upload className="h-5 w-5 text-orange-600" />
+                           Thêm mới Hồ sơ Chuyên Môn
+                        </h3>
+                        <button
+                           onClick={() => setIsUploadModalOpen(false)}
+                           className="p-1 text-gray-400 hover:text-gray-600 rounded-full hover:bg-gray-100 transition-colors"
+                        >
+                           <X className="h-6 w-6" />
+                        </button>
+                     </div>
+
+                     {/* Modal Body */}
+                     <div className="p-6 space-y-5">
+
+                        {/* 1. File Type Selection (Radio/Pills) */}
+                        <div>
+                           <label className="block text-sm font-medium text-gray-700 mb-2">Loại hồ sơ <span className="text-red-500">*</span></label>
+                           <div className="flex gap-2 bg-gray-100 p-1 rounded-lg">
+                              <button
+                                 onClick={() => setUploadFormData({ ...uploadFormData, type: 'plan' })}
+                                 className={`flex-1 py-2 px-4 text-sm font-medium rounded-md transition-all ${uploadFormData.type === 'plan'
+                                    ? 'bg-white text-orange-700 shadow-sm'
+                                    : 'text-gray-500 hover:text-gray-700'
+                                    }`}
+                              >
+                                 Kế hoạch hoạt động
+                              </button>
+                              <button
+                                 onClick={() => setUploadFormData({ ...uploadFormData, type: 'minute' })}
+                                 className={`flex-1 py-2 px-4 text-sm font-medium rounded-md transition-all ${uploadFormData.type === 'minute'
+                                    ? 'bg-white text-orange-700 shadow-sm'
+                                    : 'text-gray-500 hover:text-gray-700'
+                                    }`}
+                              >
+                                 Biên bản họp tổ
+                              </button>
+                           </div>
+                        </div>
+
+                        {/* 2. File Name */}
+                        <div>
+                           <label className="block text-sm font-medium text-gray-700 mb-1">Tên văn bản <span className="text-red-500">*</span></label>
+                           <input
+                              autoFocus
+                              type="text"
+                              className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none transition-all"
+                              placeholder="VD: Kế hoạch chuyên môn Tháng 11..."
+                              value={uploadFormData.name}
+                              onChange={(e) => setUploadFormData({ ...uploadFormData, name: e.target.value })}
+                           />
+                        </div>
+
+                        {/* 3. Date & Status Grid */}
+                        <div className="grid grid-cols-2 gap-4">
+                           <div>
+                              <label className="block text-sm font-medium text-gray-700 mb-1">
+                                 {uploadFormData.type === 'minute' ? 'Ngày họp' : 'Thời gian áp dụng'}
+                              </label>
+                              <input
+                                 type="date"
+                                 className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none transition-all text-sm"
+                                 value={uploadFormData.date}
+                                 onChange={(e) => setUploadFormData({ ...uploadFormData, date: e.target.value })}
+                              />
+                           </div>
+                           <div>
+                              <label className="block text-sm font-medium text-gray-700 mb-1">Trạng thái</label>
+                              <select
+                                 className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none transition-all bg-white text-sm"
+                                 value={uploadFormData.status}
+                                 onChange={(e) => setUploadFormData({ ...uploadFormData, status: e.target.value as any })}
+                              >
+                                 <option value="draft">🟡 Đang thảo luận</option>
+                                 <option value="finalized">🟢 Đã chốt / Ban hành</option>
+                              </select>
+                           </div>
+                        </div>
+
+                        {/* 4. Drag & Drop Zone */}
+                        <div>
+                           <label className="block text-sm font-medium text-gray-700 mb-1">Tệp đính kèm</label>
+                           <div
+                              onDrop={handleFileDrop}
+                              onDragOver={(e) => e.preventDefault()}
+                              className={`border-2 border-dashed rounded-xl p-8 flex flex-col items-center justify-center cursor-pointer transition-all group relative ${uploadFile ? 'border-orange-500 bg-orange-50' : 'border-gray-300 hover:bg-gray-50 hover:border-orange-400'}`}
+                           >
+                              <input
+                                 type="file"
+                                 className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                                 onChange={handleFileInput}
+                                 accept=".pdf,.doc,.docx"
+                              />
+
+                              {uploadFile ? (
+                                 <div className="flex flex-col items-center text-center animate-in zoom-in duration-300">
+                                    <CheckCircle className="h-10 w-10 text-orange-600 mb-2" />
+                                    <p className="text-sm font-bold text-orange-800 truncate max-w-[250px]">{uploadFile.name}</p>
+                                    <p className="text-xs text-orange-600 mt-1">{(uploadFile.size / 1024).toFixed(0)} KB - Đã sẵn sàng</p>
+                                 </div>
+                              ) : (
+                                 <div className="flex flex-col items-center text-center">
+                                    <div className="p-3 rounded-full mb-3 bg-orange-100 text-orange-600 transition-colors">
+                                       <CloudUpload className="h-8 w-8" />
+                                    </div>
+                                    <p className="text-sm font-medium text-gray-700">
+                                       Kéo thả file vào đây hoặc <span className="text-orange-600 underline">Bấm để chọn</span>
+                                    </p>
+                                    <p className="text-xs text-gray-400 mt-1">Hỗ trợ PDF, Word (Tối đa 10MB)</p>
+                                 </div>
+                              )}
+                           </div>
+                        </div>
+
+                     </div>
+
+                     {/* 5. Footer */}
+                     <div className="px-6 py-4 bg-gray-50 border-t border-gray-200 flex justify-end gap-3">
+                        <button
+                           onClick={() => setIsUploadModalOpen(false)}
+                           className="px-4 py-2 text-sm font-medium text-gray-700 hover:bg-white hover:shadow-sm rounded-lg border border-transparent hover:border-gray-300 transition-all"
+                        >
+                           Hủy bỏ
+                        </button>
+                        <button
+                           onClick={handleUploadSave}
+                           className="flex items-center gap-2 px-6 py-2 text-sm font-bold text-white bg-orange-600 hover:bg-orange-700 rounded-lg shadow-md transition-all"
+                        >
+                           <Upload className="h-4 w-4" /> Lưu hồ sơ
+                        </button>
+                     </div>
 
                   </div>
+               </div>
+            )
+         }
 
-                  {/* 5. Footer */}
-                  <div className="px-6 py-4 bg-gray-50 border-t border-gray-200 flex justify-end gap-3">
-                     <button
-                        onClick={() => setIsUploadModalOpen(false)}
-                        className="px-4 py-2 text-sm font-medium text-gray-700 hover:bg-white hover:shadow-sm rounded-lg border border-transparent hover:border-gray-300 transition-all"
-                     >
-                        Hủy bỏ
-                     </button>
-                     <button
-                        onClick={handleUploadSave}
-                        className="flex items-center gap-2 px-6 py-2 text-sm font-bold text-white bg-orange-600 hover:bg-orange-700 rounded-lg shadow-md transition-all"
-                     >
-                        <Upload className="h-4 w-4" /> Lưu hồ sơ
-                     </button>
+         {/* --- WORD EDITOR MODAL --- */}
+         {
+            isWordEditorOpen && editingItem && (
+               <AdvancedWordEditor
+                  fileUrl={(editingItem as any).url}
+                  planId={editingItem.id}
+                  planTitle={editingItem.title}
+                  collectionName="plans"
+                  storageFolder="plans"
+                  onClose={() => {
+                     setIsWordEditorOpen(false);
+                     setEditingItem(null);
+                  }}
+                  onSaveSuccess={handleWordEditorSaveSuccess}
+               />
+            )
+         }
+
+         {/* Delete Comment Modal */}
+         {isDeleteCommentModalOpen && (
+            <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
+               <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm overflow-hidden animate-in zoom-in-95 duration-200">
+                  <div className="p-6 text-center">
+                     <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <Trash2 className="h-6 w-6 text-red-600" />
+                     </div>
+                     <h3 className="text-lg font-bold text-gray-900 mb-2">Xóa góp ý?</h3>
+                     <p className="text-sm text-gray-500 mb-6">
+                        Bạn có chắc chắn muốn xóa góp ý này không? Hành động này không thể hoàn tác.
+                     </p>
+
+                     <div className="flex gap-3 justify-center">
+                        <button
+                           onClick={() => setIsDeleteCommentModalOpen(false)}
+                           className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+                        >
+                           Hủy bỏ
+                        </button>
+                        <button
+                           onClick={confirmDeleteComment}
+                           className="px-4 py-2 text-sm font-bold text-white bg-red-600 rounded-lg hover:bg-red-700 shadow-md transition-colors"
+                        >
+                           Xóa góp ý
+                        </button>
+                     </div>
                   </div>
-
                </div>
             </div>
          )}
-
-         {/* --- WORD EDITOR MODAL --- */}
-         {isWordEditorOpen && editingItem && (
-            <AdvancedWordEditor
-               fileUrl={(editingItem as any).url}
-               planId={editingItem.id}
-               planTitle={editingItem.title}
-               collectionName="plans"
-               storageFolder="plans"
-               onClose={() => {
-                  setIsWordEditorOpen(false);
-                  setEditingItem(null);
-               }}
-               onSaveSuccess={handleWordEditorSaveSuccess}
-            />
-         )}
-      </div>
+      </div >
    );
 };
 

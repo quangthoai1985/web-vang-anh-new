@@ -32,7 +32,8 @@ import {
    Clock,
    CheckCircle2,
    XCircle,
-   Edit3
+   Edit3,
+   AlertTriangle // Import AlertTriangle
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useNotification } from '../context/NotificationContext';
@@ -215,7 +216,7 @@ const ClassRecords: React.FC = () => {
    };
 
    // Permission Check for Comment - Based on hierarchy:
-   // - Vice Principal (vice_principal) can comment on Head Teacher/Vice Head Teacher files
+   // - Vice Principal (vice_principal) can comment on Head Teacher/Vice Head Teacher AND all teachers
    // - Head Teacher/Vice Head Teacher can comment on Teacher files
    const canComment = (file: ClassFile): boolean => {
       if (!user) return false;
@@ -224,9 +225,9 @@ const ClassRecords: React.FC = () => {
 
       if (!uploaderRole) return false;
 
-      // Vice Principal can comment on Head Teacher and Vice Head Teacher
+      // Vice Principal can comment on Head Teacher, Vice Head Teacher, AND Teachers
       if (user.role === 'vice_principal') {
-         return ['head_teacher', 'vice_head_teacher'].includes(uploaderRole);
+         return ['head_teacher', 'vice_head_teacher', 'teacher'].includes(uploaderRole);
       }
 
       // Head Teacher and Vice Head Teacher can comment on Teacher
@@ -235,6 +236,49 @@ const ClassRecords: React.FC = () => {
       }
 
       return false;
+   };
+
+   // Permission Check for Response - Only file owner can respond to comments
+   const canRespond = (file: ClassFile): boolean => {
+      if (!user) return false;
+      const fileData = file as any;
+
+      // Check if user is file owner (by ID or by name)
+      const isOwnerById = fileData.uploaderId === user.id;
+      const isOwnerByName = fileData.uploader?.toLowerCase() === user.fullName?.toLowerCase();
+      const isOwner = isOwnerById || isOwnerByName;
+
+      // Check if file needs revision (has comments requiring response)
+      const needsRevision = fileData.approval?.status === 'needs_revision';
+      const hasComments = (fileData.comments?.length || 0) > 0;
+
+      // Allow response if: (1) is owner AND (2) has comments needing revision
+      const canRes = isOwner && (needsRevision || hasComments);
+
+      console.log('[canRespond]', {
+         fileName: file.name,
+         uploaderId: fileData.uploaderId,
+         userId: user.id,
+         uploader: fileData.uploader,
+         userFullName: user.fullName,
+         isOwnerById, isOwnerByName, isOwner,
+         approvalStatus: fileData.approval?.status,
+         hasComments,
+         result: canRes
+      });
+
+      return canRes;
+   };
+
+   // Permission Check for Deletion - Only file owner can delete
+   const canDeleteFile = (file: any): boolean => {
+      if (!user) return false;
+      // Check if user is file owner (by ID or by name)
+      const isOwnerById = file.uploaderId === user.id;
+      // Legacy fallback: check by name for old files without uploaderId
+      const isOwnerByName = file.uploader?.toLowerCase() === user.fullName?.toLowerCase();
+
+      return isOwnerById || isOwnerByName;
    };
 
    // Check if user can edit/delete a specific comment (only own comments)
@@ -381,39 +425,7 @@ const ClassRecords: React.FC = () => {
    };
 
    // Mở modal từ chối file
-   const openRejectFileModal = (file: any, e: React.MouseEvent) => {
-      e.stopPropagation();
-      setFileToReject(file);
-      setRejectionReason('');
-      setIsRejectFileModalOpen(true);
-   };
 
-   // Xử lý từ chối file
-   const handleRejectFile = async () => {
-      if (!user || !fileToReject) return;
-
-      try {
-         const docRef = doc(db, 'class_files', fileToReject.id);
-         await updateDoc(docRef, {
-            approval: {
-               status: 'rejected',
-               reviewerId: user.id,
-               reviewerName: user.fullName,
-               reviewerRole: user.role,
-               reviewedAt: new Date().toISOString(),
-               rejectionReason: rejectionReason || 'Không đạt yêu cầu'
-            }
-         });
-
-         addToast("Đã từ chối hồ sơ", `Hồ sơ "${fileToReject.name}" đã bị từ chối.`, "warning");
-         setIsRejectFileModalOpen(false);
-         setFileToReject(null);
-         setRejectionReason('');
-      } catch (error) {
-         console.error("Error rejecting file:", error);
-         addToast("Lỗi", "Không thể từ chối hồ sơ. Vui lòng thử lại.", "error");
-      }
-   };
 
    // Fetch Class Details
    useEffect(() => {
@@ -1164,6 +1176,16 @@ const ClassRecords: React.FC = () => {
                                                                <CheckCircle2 className="h-2.5 w-2.5" /> Đã duyệt
                                                             </span>
                                                          )}
+                                                         {file.approval?.status === 'needs_revision' && (
+                                                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-amber-100 text-amber-700 animate-pulse">
+                                                               <AlertTriangle className="h-2.5 w-2.5" /> Cần sửa
+                                                            </span>
+                                                         )}
+                                                         {file.approval?.status === 'responded' && (
+                                                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-blue-100 text-blue-700">
+                                                               <MessageCircle className="h-2.5 w-2.5" /> Đã phản hồi
+                                                            </span>
+                                                         )}
                                                          {file.approval?.status === 'rejected' && (
                                                             <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-red-100 text-red-700" title={file.approval.rejectionReason}>
                                                                <XCircle className="h-2.5 w-2.5" /> Từ chối
@@ -1199,10 +1221,15 @@ const ClassRecords: React.FC = () => {
                                                             <CheckCircle2 className="h-3 w-3" /> Duyệt
                                                          </button>
                                                          <button
-                                                            onClick={(e) => openRejectFileModal(file, e)}
-                                                            className="px-2 py-1 text-[9px] font-bold text-white bg-red-500 hover:bg-red-600 rounded transition-colors flex items-center gap-0.5"
+                                                            onClick={(e) => {
+                                                               e.stopPropagation();
+                                                               setFileToReject(file);
+                                                               setRejectionReason('');
+                                                               setIsRejectFileModalOpen(true);
+                                                            }}
+                                                            className="px-2 py-1 text-[9px] font-bold text-white bg-amber-500 hover:bg-amber-600 rounded transition-colors flex items-center gap-0.5"
                                                          >
-                                                            <XCircle className="h-3 w-3" /> Từ chối
+                                                            <Edit3 className="h-3 w-3" /> Yêu cầu sửa
                                                          </button>
                                                       </div>
                                                    )}
@@ -1212,12 +1239,14 @@ const ClassRecords: React.FC = () => {
                                                          Góp ý mới
                                                       </span>
                                                    )}
-                                                   <button
-                                                      onClick={(e) => openDeleteModal(file, folder.id, e)}
-                                                      className="p-2 text-gray-400 hover:text-red-600 rounded-full hover:bg-red-50"
-                                                   >
-                                                      <Trash2 className="h-4 w-4" />
-                                                   </button>
+                                                   {canDeleteFile(file) && (
+                                                      <button
+                                                         onClick={(e) => openDeleteModal(file, folder.id, e)}
+                                                         className="p-2 text-gray-400 hover:text-red-600 rounded-full hover:bg-red-50"
+                                                      >
+                                                         <Trash2 className="h-4 w-4" />
+                                                      </button>
+                                                   )}
                                                 </div>
                                              </div>
                                           ))}
@@ -1269,12 +1298,14 @@ const ClassRecords: React.FC = () => {
                                        <h4 className="font-bold text-gray-800 truncate">{file.name}</h4>
                                        <p className="text-xs text-gray-500">{new Date(file.date).toLocaleDateString('vi-VN')}</p>
                                     </div>
-                                    <button
-                                       onClick={(e) => openDeleteModal(file, 'students', e)}
-                                       className="p-2 text-gray-400 hover:text-red-600 rounded-full hover:bg-red-50"
-                                    >
-                                       <Trash2 className="h-4 w-4" />
-                                    </button>
+                                    {canDeleteFile(file) && (
+                                       <button
+                                          onClick={(e) => openDeleteModal(file, 'students', e)}
+                                          className="p-2 text-gray-400 hover:text-red-600 rounded-full hover:bg-red-50"
+                                       >
+                                          <Trash2 className="h-4 w-4" />
+                                       </button>
+                                    )}
                                  </div>
                               ))}
                            </div>
@@ -1389,6 +1420,67 @@ const ClassRecords: React.FC = () => {
                            </div>
                         </div>
 
+                        {/* Approval Actions - Only for Reviewer */}
+                        {canComment(selectedFile) && (
+                           <div className="p-4 border-b border-gray-100 bg-gray-50 flex gap-2">
+                              {/* Approve Button */}
+                              {selectedFile.approval?.status !== 'approved' && (
+                                 <button
+                                    onClick={async () => {
+                                       try {
+                                          const fileRef = doc(db, 'class_files', selectedFile.id);
+                                          await updateDoc(fileRef, {
+                                             'approval.status': 'approved',
+                                             'approval.reviewedAt': new Date().toISOString(),
+                                             'approval.reviewerId': user?.id,
+                                             'approval.reviewerName': user?.fullName
+                                          });
+
+                                          // Notify uploader
+                                          createNotification('comment', user!, {
+                                             type: 'class',
+                                             name: `Đã duyệt: ${selectedFile.name}`,
+                                             targetPath: `/class/${currentClass?.id}?tab=plan&fileId=${selectedFile.id}`,
+                                             extraInfo: { classId: currentClass?.id, uploaderId: (selectedFile as any).uploaderId }
+                                          });
+
+                                          addToast("Đã duyệt", "Hồ sơ đã được phê duyệt.", "success");
+
+                                          // Update local state
+                                          setSelectedFile({
+                                             ...selectedFile,
+                                             approval: {
+                                                ...((selectedFile as any).approval || {}),
+                                                status: 'approved',
+                                                reviewedAt: new Date().toISOString()
+                                             }
+                                          } as any);
+                                       } catch (error) {
+                                          console.error("Error approving:", error);
+                                          addToast("Lỗi", "Không thể duyệt hồ sơ", "error");
+                                       }
+                                    }}
+                                    className="flex-1 bg-green-600 text-white px-3 py-2 rounded-lg text-sm font-bold hover:bg-green-700 transition-colors flex items-center justify-center gap-2 shadow-sm"
+                                 >
+                                    <CheckCircle className="h-4 w-4" /> Duyệt
+                                 </button>
+                              )}
+
+                              {/* Request Revision Button */}
+                              {selectedFile.approval?.status !== 'approved' && (
+                                 <button
+                                    onClick={() => {
+                                       setFileToReject(selectedFile);
+                                       setIsRejectFileModalOpen(true);
+                                    }}
+                                    className="flex-1 bg-white text-amber-600 border border-amber-200 px-3 py-2 rounded-lg text-sm font-bold hover:bg-amber-50 transition-colors flex items-center justify-center gap-2"
+                                 >
+                                    <Edit3 className="h-4 w-4" /> Yêu cầu sửa lại
+                                 </button>
+                              )}
+                           </div>
+                        )}
+
                         {/* Comments Area (Scrollable) */}
                         <div className="flex-1 overflow-y-auto p-4 bg-white">
                            <h3 className="text-sm font-bold text-gray-800 mb-4 flex items-center gap-2 sticky top-0 bg-white pb-2 z-10">
@@ -1400,13 +1492,27 @@ const ClassRecords: React.FC = () => {
                               {((selectedFile as any).comments || []).length > 0 ? (
                                  ((selectedFile as any).comments || []).map((c: Comment) => (
                                     <div key={c.id} className="flex gap-3 group">
-                                       <div className="h-8 w-8 rounded-full bg-amber-100 text-amber-700 border border-amber-200 flex items-center justify-center text-xs font-bold flex-shrink-0">
+                                       <div className={`h-8 w-8 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 border ${c.type === 'response'
+                                          ? 'bg-green-100 text-green-700 border-green-200'
+                                          : 'bg-amber-100 text-amber-700 border-amber-200'
+                                          }`}>
                                           {c.userName?.charAt(0) || 'U'}
                                        </div>
-                                       <div className="bg-gray-50 rounded-xl rounded-tl-none p-3 flex-1 border border-gray-100 relative">
+                                       <div className={`rounded-xl rounded-tl-none p-3 flex-1 border relative ${c.type === 'response'
+                                          ? 'bg-green-50 border-green-100'
+                                          : 'bg-gray-50 border-gray-100'
+                                          }`}>
                                           <div className="flex justify-between items-start mb-1">
                                              <div className="flex flex-col">
-                                                <span className="text-xs font-bold text-gray-900">{c.userName}</span>
+                                                <div className="flex items-center gap-2">
+                                                   <span className="text-xs font-bold text-gray-900">{c.userName}</span>
+                                                   <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${c.type === 'response'
+                                                      ? 'bg-green-200 text-green-700'
+                                                      : 'bg-amber-200 text-amber-700'
+                                                      }`}>
+                                                      {c.type === 'response' ? 'Phản hồi' : 'Góp ý'}
+                                                   </span>
+                                                </div>
                                                 <span className="text-[10px] text-gray-500">{c.userRole}</span>
                                              </div>
                                              {/* Edit/Delete buttons - only for own comments */}
@@ -1496,7 +1602,8 @@ const ClassRecords: React.FC = () => {
                                           userName: user.fullName,
                                           userRole: user.roleLabel || user.role,
                                           content: newComment.trim(),
-                                          timestamp: new Date().toISOString()
+                                          timestamp: new Date().toISOString(),
+                                          type: 'comment'  // Reviewer comment
                                        };
 
                                        try {
@@ -1504,7 +1611,15 @@ const ClassRecords: React.FC = () => {
                                           await updateDoc(fileRef, {
                                              comments: arrayUnion(comment),
                                              hasNewComments: true,
-                                             commentCount: (selectedFile.commentCount || 0) + 1
+                                             commentCount: (selectedFile.commentCount || 0) + 1,
+                                             // Update approval status to needs_revision when comment is posted
+                                             approval: {
+                                                ...((selectedFile as any).approval || {}),
+                                                status: 'needs_revision',
+                                                reviewerId: user.id,
+                                                reviewerName: user.fullName,
+                                                reviewerRole: user.roleLabel || user.role
+                                             }
                                           });
 
                                           // Update local state to show new comment immediately
@@ -1512,7 +1627,14 @@ const ClassRecords: React.FC = () => {
                                              ...selectedFile,
                                              comments: [...((selectedFile as any).comments || []), comment],
                                              hasNewComments: true,
-                                             commentCount: (selectedFile.commentCount || 0) + 1
+                                             commentCount: (selectedFile.commentCount || 0) + 1,
+                                             approval: {
+                                                ...((selectedFile as any).approval || {}),
+                                                status: 'needs_revision',
+                                                reviewerId: user.id,
+                                                reviewerName: user.fullName,
+                                                reviewerRole: user.roleLabel || user.role
+                                             }
                                           } as any);
 
                                           // Send Notification to file owner
@@ -1545,6 +1667,87 @@ const ClassRecords: React.FC = () => {
                                  <Lock className="h-2.5 w-2.5" /> Chỉ nội bộ BGH và GVCN xem được.
                               </p>
                            </div>
+                        ) : canRespond(selectedFile) ? (
+                           /* Response input for file owner (teacher) */
+                           <div className="p-4 border-t border-gray-200 bg-green-50">
+                              <div className="text-xs text-green-700 mb-2 font-medium flex items-center gap-1">
+                                 <MessageCircle className="h-3 w-3" />
+                                 Phản hồi góp ý của người kiểm duyệt
+                              </div>
+                              <div className="relative">
+                                 <input
+                                    type="text"
+                                    className="w-full pl-4 pr-12 py-3 bg-white border border-green-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent shadow-sm"
+                                    placeholder="Nhập nội dung phản hồi..."
+                                    value={newComment}
+                                    onChange={(e) => setNewComment(e.target.value)}
+                                 />
+                                 <button
+                                    onClick={async () => {
+                                       if (!newComment.trim() || !user || !selectedFile) return;
+
+                                       const response: Comment = {
+                                          id: Date.now().toString(),
+                                          userId: user.id,
+                                          userName: user.fullName,
+                                          userRole: user.roleLabel || user.role,
+                                          content: newComment.trim(),
+                                          timestamp: new Date().toISOString(),
+                                          type: 'response'  // Teacher response
+                                       };
+
+                                       try {
+                                          const fileRef = doc(db, 'class_files', selectedFile.id);
+                                          await updateDoc(fileRef, {
+                                             comments: arrayUnion(response),
+                                             commentCount: (selectedFile.commentCount || 0) + 1,
+                                             // Update approval status to responded
+                                             approval: {
+                                                ...((selectedFile as any).approval || {}),
+                                                status: 'responded'
+                                             }
+                                          });
+
+                                          // Update local state
+                                          setSelectedFile({
+                                             ...selectedFile,
+                                             comments: [...((selectedFile as any).comments || []), response],
+                                             commentCount: (selectedFile.commentCount || 0) + 1,
+                                             approval: {
+                                                ...((selectedFile as any).approval || {}),
+                                                status: 'responded'
+                                             }
+                                          } as any);
+
+                                          // Notify reviewer
+                                          const reviewerId = (selectedFile as any).approval?.reviewerId;
+                                          if (reviewerId) {
+                                             createNotification('comment', user, {
+                                                type: 'class',
+                                                name: `Phản hồi: ${selectedFile.name}`,
+                                                targetPath: `/class/${classId}?tab=plan&fileId=${selectedFile.id}`,
+                                                extraInfo: { classId, uploaderId: reviewerId }
+                                             });
+                                          }
+
+                                          setNewComment('');
+                                          addToast("Đã gửi phản hồi", "Người kiểm duyệt sẽ nhận được thông báo.", "success");
+
+                                          setTimeout(() => {
+                                             commentsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+                                          }, 100);
+                                       } catch (error) {
+                                          console.error("Error adding response: ", error);
+                                          addToast("Lỗi", "Không thể gửi phản hồi.", "error");
+                                       }
+                                    }}
+                                    disabled={!newComment.trim()}
+                                    className="absolute right-2 top-1/2 transform -translate-y-1/2 p-1.5 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 transition-all"
+                                 >
+                                    <Send className="h-4 w-4" />
+                                 </button>
+                              </div>
+                           </div>
                         ) : (
                            <div className="p-4 border-t border-gray-200 bg-gray-50">
                               <div className="text-center text-xs text-gray-400 py-2">
@@ -1557,369 +1760,443 @@ const ClassRecords: React.FC = () => {
                   </div>
                </div>
             </div>
-         )}
+         )
+         }
 
          {/* --- FULL SCREEN PREVIEW MODAL --- */}
-         {isFullScreenPreviewOpen && selectedFile && (
-            <div className="fixed inset-0 z-[60] bg-black/90 backdrop-blur-sm flex flex-col animate-in fade-in duration-200">
-               {/* Top Bar */}
-               <div className="flex items-center justify-between px-6 py-4 bg-black/50 text-white backdrop-blur-md z-10">
-                  <div className="flex items-center gap-4">
-                     <div className="p-2 bg-white/10 rounded-lg backdrop-blur-sm">
-                        <FileText className="h-6 w-6 text-white" />
-                     </div>
-                     <div>
-                        <h2 className="text-lg font-bold text-white leading-none">{selectedFile.name}</h2>
-                        <p className="text-xs text-white/60 mt-1">Chế độ xem toàn màn hình</p>
-                     </div>
-                  </div>
-                  <div className="flex items-center gap-3">
-                     <button className="p-2 hover:bg-white/20 rounded-full transition-colors" title="Thu nhỏ">
-                        <ZoomOut className="h-5 w-5" />
-                     </button>
-                     <button className="p-2 hover:bg-white/20 rounded-full transition-colors" title="Phóng to">
-                        <ZoomIn className="h-5 w-5" />
-                     </button>
-                     <div className="w-px h-6 bg-white/20 mx-1"></div>
-                     <button
-                        onClick={() => setIsFullScreenPreviewOpen(false)}
-                        className="p-2 hover:bg-red-500/80 hover:text-white bg-white/10 rounded-full transition-colors"
-                     >
-                        <X className="h-6 w-6" />
-                     </button>
-                  </div>
-               </div>
-
-               {/* Content Area */}
-               <div className="flex-1 overflow-auto p-8 flex justify-center custom-scrollbar bg-neutral-900/50">
-                  {renderFilePreview(true)}
-               </div>
-            </div>
-         )}
-
-         {/* Delete Confirmation Modal */}
-         {isDeleteModalOpen && fileToDelete && (
-            <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
-               <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm overflow-hidden animate-in zoom-in-95 duration-200">
-                  <div className="p-6 text-center">
-                     <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                        <AlertCircle className="h-8 w-8 text-red-600" />
-                     </div>
-                     <h3 className="text-lg font-bold text-gray-900 mb-2">Xác nhận xóa tài liệu?</h3>
-                     <p className="text-sm text-gray-500 mb-6">
-                        Bạn có chắc chắn muốn xóa file <span className="font-semibold text-gray-800">"{fileToDelete.file.name}"</span> không? Hành động này không thể hoàn tác.
-                     </p>
-                     <div className="flex gap-3 justify-center">
-                        <button
-                           onClick={() => setIsDeleteModalOpen(false)}
-                           className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
-                        >
-                           Hủy bỏ
-                        </button>
-                        <button
-                           onClick={confirmDelete}
-                           className="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 shadow-md transition-colors"
-                        >
-                           Xóa vĩnh viễn
-                        </button>
-                     </div>
-                  </div>
-               </div>
-            </div>
-         )}
-
-         {/* Rejection Confirmation Modal */}
-         {isRejectFileModalOpen && fileToReject && (
-            <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
-               <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200">
-                  <div className="p-6">
-                     <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                        <XCircle className="h-8 w-8 text-red-600" />
-                     </div>
-                     <h3 className="text-lg font-bold text-gray-900 mb-2 text-center">Xác nhận từ chối hồ sơ?</h3>
-                     <p className="text-sm text-gray-500 mb-4 text-center">
-                        Bạn sắp từ chối hồ sơ <span className="font-semibold text-gray-800">"{fileToReject.name}"</span>
-                     </p>
-
-                     <div className="mb-4">
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                           Lý do từ chối <span className="text-red-500">*</span>
-                        </label>
-                        <textarea
-                           className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-red-500 focus:border-red-500 outline-none transition-all resize-none"
-                           rows={3}
-                           placeholder="Nhập lý do từ chối để giáo viên biết cần chỉnh sửa gì..."
-                           value={rejectionReason}
-                           onChange={(e) => setRejectionReason(e.target.value)}
-                        />
-                     </div>
-
-                     <div className="flex gap-3 justify-center">
-                        <button
-                           onClick={() => { setIsRejectFileModalOpen(false); setFileToReject(null); }}
-                           className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
-                        >
-                           Hủy bỏ
-                        </button>
-                        <button
-                           onClick={handleRejectFile}
-                           disabled={!rejectionReason.trim()}
-                           className="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 shadow-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                           Xác nhận từ chối
-                        </button>
-                     </div>
-                  </div>
-               </div>
-            </div>
-         )}
-
-         {/* --- UPLOAD MODAL (NEW) --- */}
-         {isUploadModalOpen && (
-            <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
-               <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col animate-in zoom-in-95 duration-200">
-
-                  {/* Modal Header */}
-                  <div className="px-6 py-4 border-b border-amber-100 flex justify-between items-center bg-white">
-                     <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
-                        <Upload className="h-5 w-5 text-amber-600" />
-                        Thêm mới Tài liệu Lớp học
-                     </h3>
-                     <button
-                        onClick={() => setIsUploadModalOpen(false)}
-                        className="p-1 text-gray-400 hover:text-gray-600 rounded-full hover:bg-gray-100 transition-colors"
-                     >
-                        <X className="h-6 w-6" />
-                     </button>
-                  </div>
-
-                  {/* Modal Body */}
-                  <div className="p-6 space-y-5">
-
-                     {/* 1. Select Storage Area (Tab) */}
-                     <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">Khu vực lưu trữ</label>
-                        <div className="flex gap-2 bg-gray-100 p-1 rounded-lg">
-                           {[
-                              { id: 'students', label: 'Danh sách Lớp' },
-                              { id: 'plan', label: 'Kế hoạch' },
-                              { id: 'assessment', label: 'Đánh giá Trẻ' },
-                              { id: 'steam', label: 'Dự án STEAM' }
-                           ].map(area => (
-                              <button
-                                 key={area.id}
-                                 onClick={() => setUploadFormData({ ...uploadFormData, area: area.id as any })}
-                                 className={`flex-1 py-2 px-2 text-sm font-medium rounded-md transition-all ${uploadFormData.area === area.id
-                                    ? 'bg-white text-amber-700 shadow-sm ring-1 ring-gray-200'
-                                    : 'text-gray-500 hover:text-gray-700'
-                                    }`}
-                              >
-                                 {area.label}
-                              </button>
-                           ))}
+         {
+            isFullScreenPreviewOpen && selectedFile && (
+               <div className="fixed inset-0 z-[60] bg-black/90 backdrop-blur-sm flex flex-col animate-in fade-in duration-200">
+                  {/* Top Bar */}
+                  <div className="flex items-center justify-between px-6 py-4 bg-black/50 text-white backdrop-blur-md z-10">
+                     <div className="flex items-center gap-4">
+                        <div className="p-2 bg-white/10 rounded-lg backdrop-blur-sm">
+                           <FileText className="h-6 w-6 text-white" />
+                        </div>
+                        <div>
+                           <h2 className="text-lg font-bold text-white leading-none">{selectedFile.name}</h2>
+                           <p className="text-xs text-white/60 mt-1">Chế độ xem toàn màn hình</p>
                         </div>
                      </div>
+                     <div className="flex items-center gap-3">
+                        <button className="p-2 hover:bg-white/20 rounded-full transition-colors" title="Thu nhỏ">
+                           <ZoomOut className="h-5 w-5" />
+                        </button>
+                        <button className="p-2 hover:bg-white/20 rounded-full transition-colors" title="Phóng to">
+                           <ZoomIn className="h-5 w-5" />
+                        </button>
+                        <div className="w-px h-6 bg-white/20 mx-1"></div>
+                        <button
+                           onClick={() => setIsFullScreenPreviewOpen(false)}
+                           className="p-2 hover:bg-red-500/80 hover:text-white bg-white/10 rounded-full transition-colors"
+                        >
+                           <X className="h-6 w-6" />
+                        </button>
+                     </div>
+                  </div>
 
-                     {/* 1.5. Plan Type Selection (Only for 'plan' area) */}
-                     {uploadFormData.area === 'plan' && (
+                  {/* Content Area */}
+                  <div className="flex-1 overflow-auto p-8 flex justify-center custom-scrollbar bg-neutral-900/50">
+                     {renderFilePreview(true)}
+                  </div>
+               </div>
+            )
+         }
+
+         {/* Delete Confirmation Modal */}
+         {
+            isDeleteModalOpen && fileToDelete && (
+               <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
+                  <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm overflow-hidden animate-in zoom-in-95 duration-200">
+                     <div className="p-6 text-center">
+                        <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                           <AlertCircle className="h-8 w-8 text-red-600" />
+                        </div>
+                        <h3 className="text-lg font-bold text-gray-900 mb-2">Xác nhận xóa tài liệu?</h3>
+                        <p className="text-sm text-gray-500 mb-6">
+                           Bạn có chắc chắn muốn xóa file <span className="font-semibold text-gray-800">"{fileToDelete.file.name}"</span> không? Hành động này không thể hoàn tác.
+                        </p>
+                        <div className="flex gap-3 justify-center">
+                           <button
+                              onClick={() => setIsDeleteModalOpen(false)}
+                              className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+                           >
+                              Hủy bỏ
+                           </button>
+                           <button
+                              onClick={confirmDelete}
+                              className="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 shadow-md transition-colors"
+                           >
+                              Xóa vĩnh viễn
+                           </button>
+                        </div>
+                     </div>
+                  </div>
+               </div>
+            )
+         }
+
+         {/* Request Revision Confirmation Modal */}
+         {
+            isRejectFileModalOpen && fileToReject && (
+               <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
+                  <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200">
+                     <div className="p-6">
+                        <div className="w-16 h-16 bg-amber-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                           <Edit3 className="h-8 w-8 text-amber-600" />
+                        </div>
+                        <h3 className="text-lg font-bold text-gray-900 mb-2 text-center">Yêu cầu giáo viên sửa lại?</h3>
+                        <p className="text-sm text-gray-500 mb-4 text-center">
+                           Bạn sắp yêu cầu chỉnh sửa hồ sơ <span className="font-semibold text-gray-800">"{fileToReject.name}"</span>
+                        </p>
+
+                        <div className="mb-4">
+                           <label className="block text-sm font-medium text-gray-700 mb-2">
+                              Nội dung cần chỉnh sửa <span className="text-red-500">*</span>
+                           </label>
+                           <textarea
+                              className="w-full border border-amber-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-amber-500 focus:border-amber-500 outline-none transition-all resize-none"
+                              rows={4}
+                              placeholder="Nhập chi tiết các điểm cần sửa..."
+                              value={rejectionReason}
+                              onChange={(e) => setRejectionReason(e.target.value)}
+                           />
+                        </div>
+
+                        <div className="flex gap-3 justify-center">
+                           <button
+                              onClick={() => { setIsRejectFileModalOpen(false); setFileToReject(null); }}
+                              className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+                           >
+                              Hủy bỏ
+                           </button>
+                           <button
+                              onClick={async () => {
+                                 if (!user || !fileToReject || !rejectionReason.trim()) return;
+
+                                 try {
+                                    const docRef = doc(db, 'class_files', fileToReject.id);
+
+                                    // Create a comment for the revision request
+                                    const revisionComment: Comment = {
+                                       id: Date.now().toString(),
+                                       userId: user.id,
+                                       userName: user.fullName,
+                                       userRole: user.roleLabel || user.role,
+                                       content: rejectionReason.trim(),
+                                       timestamp: new Date().toISOString(),
+                                       type: 'comment'
+                                    };
+
+                                    await updateDoc(docRef, {
+                                       approval: {
+                                          status: 'needs_revision',
+                                          reviewerId: user.id,
+                                          reviewerName: user.fullName,
+                                          reviewerRole: user.role,
+                                          reviewedAt: new Date().toISOString(),
+                                          rejectionReason: rejectionReason // Optional: keep for history
+                                       },
+                                       comments: arrayUnion(revisionComment),
+                                       commentCount: (fileToReject.commentCount || 0) + 1,
+                                       hasNewComments: true
+                                    });
+
+                                    // Notify uploader
+                                    createNotification('comment', user, {
+                                       type: 'class',
+                                       name: `Yêu cầu sửa lại: ${fileToReject.name}`,
+                                       targetPath: `/class/${classId}?tab=plan&fileId=${fileToReject.id}`,
+                                       extraInfo: { classId, uploaderId: (fileToReject as any).uploaderId }
+                                    });
+
+                                    addToast("Đã gửi yêu cầu", `Đã yêu cầu giáo viên sửa lại hồ sơ.`, "success");
+
+                                    // Update local state if the rejected file is the currently selected one
+                                    if (selectedFile && selectedFile.id === fileToReject.id) {
+                                       setSelectedFile({
+                                          ...selectedFile,
+                                          approval: {
+                                             ...((selectedFile as any).approval || {}),
+                                             status: 'needs_revision'
+                                          },
+                                          comments: [...((selectedFile as any).comments || []), revisionComment],
+                                          commentCount: (selectedFile.commentCount || 0) + 1
+                                       } as any);
+                                    }
+
+                                    setIsRejectFileModalOpen(false);
+                                    setFileToReject(null);
+                                    setRejectionReason('');
+                                 } catch (error) {
+                                    console.error("Error requesting revision:", error);
+                                    addToast("Lỗi", "Có lỗi xảy ra. Vui lòng thử lại.", "error");
+                                 }
+                              }}
+                              disabled={!rejectionReason.trim()}
+                              className="px-4 py-2 text-sm font-bold text-white bg-amber-500 rounded-lg hover:bg-amber-600 shadow-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                           >
+                              <Send className="h-4 w-4 mr-1 inline" /> Gửi yêu cầu
+                           </button>
+                        </div>
+                     </div>
+                  </div>
+               </div>
+            )
+         }
+
+         {/* --- UPLOAD MODAL (NEW) --- */}
+         {
+            isUploadModalOpen && (
+               <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+                  <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col animate-in zoom-in-95 duration-200">
+
+                     {/* Modal Header */}
+                     <div className="px-6 py-4 border-b border-amber-100 flex justify-between items-center bg-white">
+                        <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                           <Upload className="h-5 w-5 text-amber-600" />
+                           Thêm mới Tài liệu Lớp học
+                        </h3>
+                        <button
+                           onClick={() => setIsUploadModalOpen(false)}
+                           className="p-1 text-gray-400 hover:text-gray-600 rounded-full hover:bg-gray-100 transition-colors"
+                        >
+                           <X className="h-6 w-6" />
+                        </button>
+                     </div>
+
+                     {/* Modal Body */}
+                     <div className="p-6 space-y-5">
+
+                        {/* 1. Select Storage Area (Tab) */}
                         <div>
-                           <label className="block text-sm font-medium text-gray-700 mb-2">Loại kế hoạch</label>
+                           <label className="block text-sm font-medium text-gray-700 mb-2">Khu vực lưu trữ</label>
                            <div className="flex gap-2 bg-gray-100 p-1 rounded-lg">
                               {[
-                                 { id: 'year', label: 'Kế hoạch Năm' },
-                                 { id: 'month', label: 'Kế hoạch Tháng' },
-                                 { id: 'week', label: 'Kế hoạch Tuần' }
-                              ].map(type => (
+                                 { id: 'students', label: 'Danh sách Lớp' },
+                                 { id: 'plan', label: 'Kế hoạch' },
+                                 { id: 'assessment', label: 'Đánh giá Trẻ' },
+                                 { id: 'steam', label: 'Dự án STEAM' }
+                              ].map(area => (
                                  <button
-                                    key={type.id}
-                                    onClick={() => setUploadFormData({ ...uploadFormData, planType: type.id as any })}
-                                    className={`flex-1 py-2 px-2 text-sm font-medium rounded-md transition-all ${uploadFormData.planType === type.id
+                                    key={area.id}
+                                    onClick={() => setUploadFormData({ ...uploadFormData, area: area.id as any })}
+                                    className={`flex-1 py-2 px-2 text-sm font-medium rounded-md transition-all ${uploadFormData.area === area.id
                                        ? 'bg-white text-amber-700 shadow-sm ring-1 ring-gray-200'
                                        : 'text-gray-500 hover:text-gray-700'
                                        }`}
                                  >
-                                    {type.label}
+                                    {area.label}
                                  </button>
                               ))}
                            </div>
                         </div>
-                     )}
 
-                     {/* 2. Time Selection (Month & Week) */}
-                     {/* Logic: 
+                        {/* 1.5. Plan Type Selection (Only for 'plan' area) */}
+                        {uploadFormData.area === 'plan' && (
+                           <div>
+                              <label className="block text-sm font-medium text-gray-700 mb-2">Loại kế hoạch</label>
+                              <div className="flex gap-2 bg-gray-100 p-1 rounded-lg">
+                                 {[
+                                    { id: 'year', label: 'Kế hoạch Năm' },
+                                    { id: 'month', label: 'Kế hoạch Tháng' },
+                                    { id: 'week', label: 'Kế hoạch Tuần' }
+                                 ].map(type => (
+                                    <button
+                                       key={type.id}
+                                       onClick={() => setUploadFormData({ ...uploadFormData, planType: type.id as any })}
+                                       className={`flex-1 py-2 px-2 text-sm font-medium rounded-md transition-all ${uploadFormData.planType === type.id
+                                          ? 'bg-white text-amber-700 shadow-sm ring-1 ring-gray-200'
+                                          : 'text-gray-500 hover:text-gray-700'
+                                          }`}
+                                    >
+                                       {type.label}
+                                    </button>
+                                 ))}
+                              </div>
+                           </div>
+                        )}
+
+                        {/* 2. Time Selection (Month & Week) */}
+                        {/* Logic: 
                          - Year Plan: Hide Month & Week
                          - Student List: Hide Month & Week
                          - Month Plan: Show Month, Hide Week
                          - Week Plan: Show Month & Week
                          - Other Areas: Show Month & Week (default)
                      */}
-                     {uploadFormData.area !== 'students' && (uploadFormData.area !== 'plan' || uploadFormData.planType !== 'year') && (
-                        <div className="grid grid-cols-2 gap-4">
-                           <div>
-                              <label className="block text-sm font-medium text-gray-700 mb-1">Chọn Tháng</label>
-                              <select
-                                 className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-amber-500 focus:border-amber-500 outline-none transition-all bg-white text-sm"
-                                 value={uploadFormData.month}
-                                 onChange={(e) => setUploadFormData({ ...uploadFormData, month: e.target.value })}
-                              >
-                                 {MONTH_OPTIONS.map(m => (
-                                    <option key={m.value} value={m.value}>{m.label}</option>
-                                 ))}
-                              </select>
-                           </div>
-
-                           {(uploadFormData.area !== 'plan' || uploadFormData.planType === 'week') && (
+                        {uploadFormData.area !== 'students' && (uploadFormData.area !== 'plan' || uploadFormData.planType !== 'year') && (
+                           <div className="grid grid-cols-2 gap-4">
                               <div>
-                                 <label className="block text-sm font-medium text-gray-700 mb-1">Chọn Tuần</label>
+                                 <label className="block text-sm font-medium text-gray-700 mb-1">Chọn Tháng</label>
                                  <select
                                     className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-amber-500 focus:border-amber-500 outline-none transition-all bg-white text-sm"
-                                    value={uploadFormData.week}
-                                    onChange={(e) => setUploadFormData({ ...uploadFormData, week: e.target.value })}
+                                    value={uploadFormData.month}
+                                    onChange={(e) => setUploadFormData({ ...uploadFormData, month: e.target.value })}
                                  >
-                                    {WEEK_OPTIONS.map(w => (
-                                       <option key={w.value} value={w.value}>{w.label}</option>
+                                    {MONTH_OPTIONS.map(m => (
+                                       <option key={m.value} value={m.value}>{m.label}</option>
                                     ))}
                                  </select>
                               </div>
-                           )}
-                        </div>
-                     )}
 
-                     {/* 3. File Name */}
-                     <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
-                           {uploadFormData.area === 'assessment' ? 'Tên phiếu đánh giá' : 'Tên tài liệu'} <span className="text-red-500">*</span>
-                        </label>
-                        <input
-                           autoFocus
-                           type="text"
-                           className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-amber-500 focus:border-amber-500 outline-none transition-all"
-                           placeholder="VD: Kế hoạch chủ đề Gia đình..."
-                           value={uploadFormData.name}
-                           onChange={(e) => setUploadFormData({ ...uploadFormData, name: e.target.value })}
-                        />
-                     </div>
-
-                     {/* 4. Drag & Drop Zone */}
-                     <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Tệp đính kèm</label>
-                        <div
-                           onDrop={handleFileDrop}
-                           onDragOver={(e) => e.preventDefault()}
-                           className={`border-2 border-dashed rounded-xl p-6 flex flex-col items-center justify-center cursor-pointer transition-all group relative ${uploadFile ? 'border-amber-500 bg-amber-50' : 'border-gray-300 hover:bg-gray-50 hover:border-amber-400'}`}
-                        >
-                           <input
-                              type="file"
-                              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                              onChange={handleFileInput}
-                           />
-
-                           {uploadFile ? (
-                              <div className="flex flex-col items-center text-center animate-in zoom-in duration-300">
-                                 <CheckCircle className="h-10 w-10 text-amber-600 mb-2" />
-                                 <p className="text-sm font-bold text-amber-800 truncate max-w-[250px]">{uploadFile.name}</p>
-                                 <p className="text-xs text-amber-600 mt-1">{(uploadFile.size / 1024).toFixed(0)} KB - Đã sẵn sàng</p>
-                              </div>
-                           ) : (
-                              <div className="flex flex-col items-center text-center">
-                                 <div className="p-3 rounded-full mb-3 bg-amber-100 text-amber-600 transition-colors">
-                                    <CloudUpload className="h-8 w-8" />
+                              {(uploadFormData.area !== 'plan' || uploadFormData.planType === 'week') && (
+                                 <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Chọn Tuần</label>
+                                    <select
+                                       className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-amber-500 focus:border-amber-500 outline-none transition-all bg-white text-sm"
+                                       value={uploadFormData.week}
+                                       onChange={(e) => setUploadFormData({ ...uploadFormData, week: e.target.value })}
+                                    >
+                                       {WEEK_OPTIONS.map(w => (
+                                          <option key={w.value} value={w.value}>{w.label}</option>
+                                       ))}
+                                    </select>
                                  </div>
-                                 <p className="text-sm font-medium text-gray-700">
-                                    Kéo thả file vào đây hoặc <span className="text-amber-600 underline">Bấm để chọn</span>
-                                 </p>
-                                 <p className="text-xs text-gray-400 mt-1">Hỗ trợ PDF, Excel, Word, Ảnh (Tối đa 10MB)</p>
-                              </div>
-                           )}
+                              )}
+                           </div>
+                        )}
+
+                        {/* 3. File Name */}
+                        <div>
+                           <label className="block text-sm font-medium text-gray-700 mb-1">
+                              {uploadFormData.area === 'assessment' ? 'Tên phiếu đánh giá' : 'Tên tài liệu'} <span className="text-red-500">*</span>
+                           </label>
+                           <input
+                              autoFocus
+                              type="text"
+                              className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-amber-500 focus:border-amber-500 outline-none transition-all"
+                              placeholder="VD: Kế hoạch chủ đề Gia đình..."
+                              value={uploadFormData.name}
+                              onChange={(e) => setUploadFormData({ ...uploadFormData, name: e.target.value })}
+                           />
                         </div>
+
+                        {/* 4. Drag & Drop Zone */}
+                        <div>
+                           <label className="block text-sm font-medium text-gray-700 mb-1">Tệp đính kèm</label>
+                           <div
+                              onDrop={handleFileDrop}
+                              onDragOver={(e) => e.preventDefault()}
+                              className={`border-2 border-dashed rounded-xl p-6 flex flex-col items-center justify-center cursor-pointer transition-all group relative ${uploadFile ? 'border-amber-500 bg-amber-50' : 'border-gray-300 hover:bg-gray-50 hover:border-amber-400'}`}
+                           >
+                              <input
+                                 type="file"
+                                 className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                                 onChange={handleFileInput}
+                              />
+
+                              {uploadFile ? (
+                                 <div className="flex flex-col items-center text-center animate-in zoom-in duration-300">
+                                    <CheckCircle className="h-10 w-10 text-amber-600 mb-2" />
+                                    <p className="text-sm font-bold text-amber-800 truncate max-w-[250px]">{uploadFile.name}</p>
+                                    <p className="text-xs text-amber-600 mt-1">{(uploadFile.size / 1024).toFixed(0)} KB - Đã sẵn sàng</p>
+                                 </div>
+                              ) : (
+                                 <div className="flex flex-col items-center text-center">
+                                    <div className="p-3 rounded-full mb-3 bg-amber-100 text-amber-600 transition-colors">
+                                       <CloudUpload className="h-8 w-8" />
+                                    </div>
+                                    <p className="text-sm font-medium text-gray-700">
+                                       Kéo thả file vào đây hoặc <span className="text-amber-600 underline">Bấm để chọn</span>
+                                    </p>
+                                    <p className="text-xs text-gray-400 mt-1">Hỗ trợ PDF, Excel, Word, Ảnh (Tối đa 10MB)</p>
+                                 </div>
+                              )}
+                           </div>
+                        </div>
+
+                        {/* 5. Note */}
+                        <div>
+                           <label className="block text-sm font-medium text-gray-700 mb-1">Ghi chú (Tùy chọn)</label>
+                           <textarea
+                              rows={2}
+                              className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-amber-500 focus:border-amber-500 outline-none transition-all text-sm"
+                              placeholder="Ghi chú cho Tổ trưởng/BGH (nếu có)..."
+                              value={uploadFormData.note}
+                              onChange={(e) => setUploadFormData({ ...uploadFormData, note: e.target.value })}
+                           />
+                        </div>
+
                      </div>
 
-                     {/* 5. Note */}
-                     <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Ghi chú (Tùy chọn)</label>
-                        <textarea
-                           rows={2}
-                           className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-amber-500 focus:border-amber-500 outline-none transition-all text-sm"
-                           placeholder="Ghi chú cho Tổ trưởng/BGH (nếu có)..."
-                           value={uploadFormData.note}
-                           onChange={(e) => setUploadFormData({ ...uploadFormData, note: e.target.value })}
-                        />
+                     {/* Footer */}
+                     <div className="px-6 py-4 bg-gray-50 border-t border-gray-200 flex justify-end gap-3">
+                        <button
+                           onClick={() => setIsUploadModalOpen(false)}
+                           className="px-4 py-2 text-sm font-medium text-gray-700 hover:bg-white hover:shadow-sm rounded-lg border border-transparent hover:border-gray-300 transition-all"
+                        >
+                           Hủy bỏ
+                        </button>
+                        <button
+                           onClick={handleSaveUpload}
+                           disabled={!uploadFile || !uploadFormData.name}
+                           className="flex items-center gap-2 px-6 py-2 text-sm font-bold text-white bg-amber-500 hover:bg-amber-600 rounded-lg shadow-md transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                           <Upload className="h-4 w-4" /> Lưu hồ sơ
+                        </button>
                      </div>
 
                   </div>
-
-                  {/* Footer */}
-                  <div className="px-6 py-4 bg-gray-50 border-t border-gray-200 flex justify-end gap-3">
-                     <button
-                        onClick={() => setIsUploadModalOpen(false)}
-                        className="px-4 py-2 text-sm font-medium text-gray-700 hover:bg-white hover:shadow-sm rounded-lg border border-transparent hover:border-gray-300 transition-all"
-                     >
-                        Hủy bỏ
-                     </button>
-                     <button
-                        onClick={handleSaveUpload}
-                        disabled={!uploadFile || !uploadFormData.name}
-                        className="flex items-center gap-2 px-6 py-2 text-sm font-bold text-white bg-amber-500 hover:bg-amber-600 rounded-lg shadow-md transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                     >
-                        <Upload className="h-4 w-4" /> Lưu hồ sơ
-                     </button>
-                  </div>
-
                </div>
-            </div>
-         )}
+            )
+         }
 
          {/* --- DELETE COMMENT CONFIRMATION MODAL --- */}
-         {isDeleteCommentModalOpen && commentToDelete && (
-            <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40 p-4 animate-in fade-in duration-200">
-               <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 animate-in zoom-in-95 duration-200">
-                  <div className="text-center mb-4">
-                     <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-3">
-                        <Trash2 className="h-6 w-6 text-red-500" />
+         {
+            isDeleteCommentModalOpen && commentToDelete && (
+               <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40 p-4 animate-in fade-in duration-200">
+                  <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 animate-in zoom-in-95 duration-200">
+                     <div className="text-center mb-4">
+                        <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                           <Trash2 className="h-6 w-6 text-red-500" />
+                        </div>
+                        <h3 className="text-lg font-bold text-gray-900">Xóa góp ý</h3>
+                        <p className="text-sm text-gray-500 mt-2">
+                           Bạn có chắc chắn muốn xóa góp ý này? Thao tác này không thể hoàn tác.
+                        </p>
                      </div>
-                     <h3 className="text-lg font-bold text-gray-900">Xóa góp ý</h3>
-                     <p className="text-sm text-gray-500 mt-2">
-                        Bạn có chắc chắn muốn xóa góp ý này? Thao tác này không thể hoàn tác.
-                     </p>
-                  </div>
-                  <div className="bg-gray-50 rounded-lg p-3 mb-4 text-sm text-gray-700 italic">
-                     "{commentToDelete.content.substring(0, 100)}{commentToDelete.content.length > 100 ? '...' : ''}"
-                  </div>
-                  <div className="flex gap-3">
-                     <button
-                        onClick={() => { setIsDeleteCommentModalOpen(false); setCommentToDelete(null); }}
-                        className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 font-medium hover:bg-gray-50 transition-colors"
-                     >
-                        Hủy
-                     </button>
-                     <button
-                        onClick={handleConfirmDeleteComment}
-                        className="flex-1 px-4 py-2 bg-red-500 text-white rounded-lg font-medium hover:bg-red-600 transition-colors"
-                     >
-                        Xóa
-                     </button>
+                     <div className="bg-gray-50 rounded-lg p-3 mb-4 text-sm text-gray-700 italic">
+                        "{commentToDelete.content.substring(0, 100)}{commentToDelete.content.length > 100 ? '...' : ''}"
+                     </div>
+                     <div className="flex gap-3">
+                        <button
+                           onClick={() => { setIsDeleteCommentModalOpen(false); setCommentToDelete(null); }}
+                           className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 font-medium hover:bg-gray-50 transition-colors"
+                        >
+                           Hủy
+                        </button>
+                        <button
+                           onClick={handleConfirmDeleteComment}
+                           className="flex-1 px-4 py-2 bg-red-500 text-white rounded-lg font-medium hover:bg-red-600 transition-colors"
+                        >
+                           Xóa
+                        </button>
+                     </div>
                   </div>
                </div>
-            </div>
-         )}
+            )
+         }
 
          {/* --- WORD EDITOR MODAL --- */}
-         {isWordEditorOpen && editingFile && (
-            <AdvancedWordEditor
-               fileUrl={(editingFile as any).url}
-               planId={editingFile.id}
-               planTitle={editingFile.name}
-               collectionName="class_files"
-               storageFolder="class_files"
-               onClose={() => {
-                  setIsWordEditorOpen(false);
-                  setEditingFile(null);
-               }}
-               onSaveSuccess={handleWordEditorSaveSuccess}
-            />
-         )}
+         {
+            isWordEditorOpen && editingFile && (
+               <AdvancedWordEditor
+                  fileUrl={(editingFile as any).url}
+                  planId={editingFile.id}
+                  planTitle={editingFile.name}
+                  collectionName="class_files"
+                  storageFolder="class_files"
+                  onClose={() => {
+                     setIsWordEditorOpen(false);
+                     setEditingFile(null);
+                  }}
+                  onSaveSuccess={handleWordEditorSaveSuccess}
+               />
+            )
+         }
 
-      </div>
+      </div >
    );
 };
 

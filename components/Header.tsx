@@ -7,6 +7,7 @@ import { useNotification } from '../context/NotificationContext';
 import { db } from '../firebase';
 import { doc, getDoc } from 'firebase/firestore';
 import ChangePasswordModal from './ChangePasswordModal';
+import AccountInfoModal from './AccountInfoModal';
 
 const Header: React.FC = () => {
   const location = useLocation();
@@ -18,6 +19,7 @@ const Header: React.FC = () => {
   const [isOpen, setIsOpen] = useState(false); // User Menu
   const [isNotifOpen, setIsNotifOpen] = useState(false); // Notification Menu
   const [isChangePasswordOpen, setIsChangePasswordOpen] = useState(false); // Change Password Modal
+  const [isAccountInfoOpen, setIsAccountInfoOpen] = useState(false); // Account Info Modal
 
   // Fetch System Logo - MUST be declared before early return
   const [systemLogo, setSystemLogo] = useState('');
@@ -290,7 +292,10 @@ const Header: React.FC = () => {
 
                   <div className="p-1.5">
                     <button
-                      onClick={() => setIsOpen(false)}
+                      onClick={() => {
+                        setIsOpen(false);
+                        setIsAccountInfoOpen(true);
+                      }}
                       className="w-full flex items-center gap-3 px-3 py-2.5 text-sm font-medium text-gray-700 hover:bg-blue-50 hover:text-blue-700 rounded-lg transition-colors"
                     >
                       <div className="p-1.5 bg-blue-100 text-blue-600 rounded-md">
@@ -337,6 +342,12 @@ const Header: React.FC = () => {
       <ChangePasswordModal
         isOpen={isChangePasswordOpen}
         onClose={() => setIsChangePasswordOpen(false)}
+      />
+
+      {/* Account Info Modal */}
+      <AccountInfoModal
+        isOpen={isAccountInfoOpen}
+        onClose={() => setIsAccountInfoOpen(false)}
       />
     </header>
   );

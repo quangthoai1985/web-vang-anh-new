@@ -84,11 +84,18 @@ export const createNotification = async (
                 receivers = [...adminIds, ...headTeacherIds];
             }
 
-            // Admin/Head Teacher comments -> Class Teacher (GVCN)
-            else if (actionType === 'comment' && (actor.role === 'admin' || actor.role === 'head_teacher')) {
-                if (classId) {
-                    const teacherIds = await getClassTeacherId(classId);
-                    receivers = [...teacherIds];
+            // Comment notification (Handles both Reviewer -> Teacher and Teacher -> Reviewer)
+            else if (actionType === 'comment') {
+                // If specific target user is provided (e.g. Reviewer ID when Teacher responds)
+                if (resource.extraInfo?.uploaderId) {
+                    receivers = [resource.extraInfo.uploaderId];
+                }
+                // Fallback: If Admin/HT comments and no specific target, send to all class teachers
+                else if (actor.role === 'admin' || actor.role === 'head_teacher') {
+                    if (classId) {
+                        const teacherIds = await getClassTeacherId(classId);
+                        receivers = [...teacherIds];
+                    }
                 }
             }
         }
@@ -101,8 +108,14 @@ export const createNotification = async (
                     const groupTeacherIds = await getGroupTeacherIds(actor.group);
                     receivers = [...adminIds, ...groupTeacherIds];
                 } else {
-                    // Fallback: If no group in actor profile (unexpected for Head Teacher), send to Admins
                     receivers = [...adminIds];
+                }
+            }
+
+            // Comment/System (Approve/Request Revision) -> Notify Uploader
+            else if (actionType === 'comment' || actionType === 'system') {
+                if (resource.extraInfo?.uploaderId) {
+                    receivers.push(resource.extraInfo.uploaderId);
                 }
             }
         }

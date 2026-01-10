@@ -1,11 +1,12 @@
 import React, { useRef, useEffect, useState } from 'react';
 import { DocumentEditorContainerComponent, Toolbar, WordExport, SfdtExport, DocumentEditor } from '@syncfusion/ej2-react-documenteditor';
 import { registerLicense } from '@syncfusion/ej2-base';
-import { X, Save, Loader2 } from 'lucide-react';
+import { X, Save, Loader2, PenLine } from 'lucide-react';
 import { storage } from '../firebase';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { doc, updateDoc } from 'firebase/firestore';
+import { doc, updateDoc, getDoc } from 'firebase/firestore';
 import { db } from '../firebase';
+import { useAuth } from '../context/AuthContext';
 
 // Register Syncfusion modules
 DocumentEditorContainerComponent.Inject(Toolbar, WordExport, SfdtExport);
@@ -35,6 +36,66 @@ const AdvancedWordEditor: React.FC<AdvancedWordEditorProps> = ({ fileUrl, planId
     const editorContainerRef = useRef<DocumentEditorContainerComponent>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [isSaving, setIsSaving] = useState(false);
+    const [signatureUrl, setSignatureUrl] = useState<string | null>(null);
+    const [isInsertingSignature, setIsInsertingSignature] = useState(false);
+
+    const { user } = useAuth();
+
+    // Fetch user signature URL from Firestore
+    useEffect(() => {
+        const fetchSignature = async () => {
+            if (!user) return;
+            try {
+                const userDocRef = doc(db, 'users', user.id);
+                const userDoc = await getDoc(userDocRef);
+                if (userDoc.exists() && userDoc.data().signatureUrl) {
+                    setSignatureUrl(userDoc.data().signatureUrl);
+                }
+            } catch (error) {
+                console.error('Error fetching signature:', error);
+            }
+        };
+        fetchSignature();
+    }, [user]);
+
+    // Insert signature image at cursor position
+    const handleInsertSignature = async () => {
+        if (!signatureUrl || !editorContainerRef.current) {
+            alert('Bạn chưa có chữ ký. Vui lòng vào Thông tin tài khoản để tải lên chữ ký.');
+            return;
+        }
+
+        setIsInsertingSignature(true);
+        try {
+            // Fetch signature image and convert to base64
+            const response = await fetch(signatureUrl);
+            const blob = await response.blob();
+
+            const reader = new FileReader();
+            reader.onloadend = () => {
+                const base64data = reader.result as string;
+
+                // Insert image into document at cursor position
+                // Syncfusion expects base64 without the prefix for some methods
+                const editor = editorContainerRef.current?.documentEditor.editor;
+                if (editor) {
+                    // Insert image with specified dimensions (width: 150px, auto height)
+                    editor.insertImage(base64data, 150, 60);
+                }
+                setIsInsertingSignature(false);
+            };
+            reader.onerror = () => {
+                console.error('Error reading signature image');
+                alert('Lỗi khi chèn chữ ký!');
+                setIsInsertingSignature(false);
+            };
+            reader.readAsDataURL(blob);
+        } catch (error) {
+            console.error('Error inserting signature:', error);
+            alert('Lỗi khi chèn chữ ký!');
+            setIsInsertingSignature(false);
+        }
+    };
 
     // License key is registered globally in index.tsx
 
@@ -145,6 +206,19 @@ const AdvancedWordEditor: React.FC<AdvancedWordEditorProps> = ({ fileUrl, planId
                 </div>
 
                 <div className="flex items-center gap-2">
+                    {/* Insert Signature Button */}
+                    <button
+                        onClick={handleInsertSignature}
+                        disabled={isInsertingSignature || isLoading || !signatureUrl}
+                        className={`px-4 py-2 rounded font-medium flex items-center gap-2 transition-colors disabled:opacity-50 ${signatureUrl
+                                ? 'bg-indigo-100 text-indigo-700 hover:bg-indigo-200'
+                                : 'bg-gray-200 text-gray-500 cursor-not-allowed'
+                            }`}
+                        title={signatureUrl ? 'Chèn chữ ký vào vị trí con trỏ' : 'Bạn chưa có chữ ký. Vui lòng vào Thông tin tài khoản để tải lên.'}
+                    >
+                        {isInsertingSignature ? <Loader2 className="h-4 w-4 animate-spin" /> : <PenLine className="h-4 w-4" />}
+                        Chèn chữ ký
+                    </button>
                     <button
                         onClick={handleSave}
                         disabled={isSaving || isLoading}
