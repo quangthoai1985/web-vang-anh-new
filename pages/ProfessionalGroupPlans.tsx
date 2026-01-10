@@ -21,7 +21,8 @@ import {
    CloudUpload,
    CheckCircle,
    Maximize2,
-   XCircle
+   XCircle,
+   Edit3
 } from 'lucide-react';
 import { Comment, ApprovalInfo, UserRole } from '../types';
 import { useAuth } from '../context/AuthContext';
@@ -32,6 +33,7 @@ import { createNotification } from '../utils/notificationUtils';
 import { storage } from '../firebase';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { getPreviewUrl } from '../utils/fileUtils';
+import AdvancedWordEditor from '../components/AdvancedWordEditor';
 
 // --- Interfaces for this page ---
 interface GroupPlan {
@@ -121,8 +123,67 @@ const ProfessionalGroupPlans: React.FC = () => {
    const [itemToReject, setItemToReject] = useState<GroupPlan | MeetingMinute | null>(null);
    const [rejectionReason, setRejectionReason] = useState('');
 
+   // Word Editor Modal State
+   const [isWordEditorOpen, setIsWordEditorOpen] = useState(false);
+   const [editingItem, setEditingItem] = useState<GroupPlan | MeetingMinute | null>(null);
+
    // Permission Check for Upload Button
    const canUpload = user?.role === 'head_teacher' || user?.role === 'vice_head_teacher' || user?.role === 'teacher';
+
+   // Permission Check for Edit Button - Only author can edit their own files
+   const canEdit = (item: GroupPlan | MeetingMinute): boolean => {
+      if (!user) {
+         console.log('[canEdit] No user logged in');
+         return false;
+      }
+      // Check by uploaderId (preferred) or uploader name (fallback)
+      const itemData = item as any;
+      const isOwnerById = itemData.uploaderId && itemData.uploaderId === user.id;
+      const isOwnerByName = item.uploader === user.fullName;
+
+      console.log('[canEdit] Checking:', {
+         'user.id': user.id,
+         'user.fullName': user.fullName,
+         'item.uploaderId': itemData.uploaderId,
+         'item.uploader': item.uploader,
+         isOwnerById,
+         isOwnerByName,
+         result: isOwnerById || isOwnerByName
+      });
+
+      return isOwnerById || isOwnerByName;
+   };
+
+   // Check if file is a Word document (editable)
+   const isWordFile = (item: GroupPlan | MeetingMinute): boolean => {
+      const itemData = item as any;
+      const fileType = itemData.fileType;
+      const url = itemData.url || '';
+      // Check fileType OR file extension in URL
+      const hasWordExtension = url.includes('.docx') || url.includes('.doc');
+      const result = fileType === 'word' || fileType === 'docx' || hasWordExtension;
+
+      console.log('[isWordFile] Checking:', {
+         fileType,
+         url: url.substring(0, 50) + '...',
+         hasWordExtension,
+         result
+      });
+
+      return result;
+   };
+
+   // Open Word Editor
+   const handleOpenWordEditor = (item: GroupPlan | MeetingMinute, e: React.MouseEvent) => {
+      e.stopPropagation();
+      setEditingItem(item);
+      setIsWordEditorOpen(true);
+   };
+
+   // Handle Word Editor save success
+   const handleWordEditorSaveSuccess = () => {
+      addToast("Lưu thành công", "Tài liệu đã được cập nhật.", "success");
+   };
 
    // Kiểm tra quyền duyệt kế hoạch
    const canApprove = (item: GroupPlan | MeetingMinute): boolean => {
@@ -330,6 +391,7 @@ const ProfessionalGroupPlans: React.FC = () => {
             ...uploadFormData,
             title: uploadFormData.name, // Map name to title
             uploader: user?.fullName || 'Ẩn danh',
+            uploaderId: user?.id || '', // Thêm uploaderId để kiểm tra quyền chính xác
             uploaderRole: user?.role || 'teacher', // Lưu vai trò người upload
             uploadDate: new Date().toISOString(),
             viewers: [],
@@ -802,6 +864,17 @@ const ProfessionalGroupPlans: React.FC = () => {
                         <h2 className="text-lg font-bold text-gray-900 leading-tight">{selectedItem.title}</h2>
                      </div>
                      <div className="flex items-center gap-2">
+                        {/* Edit Button - Only show for Word files and file owner */}
+                        {selectedItem && isWordFile(selectedItem) && canEdit(selectedItem) && (
+                           <button
+                              onClick={(e) => handleOpenWordEditor(selectedItem, e)}
+                              className="p-2 text-gray-500 hover:text-orange-600 hover:bg-orange-50 rounded-lg transition-colors flex items-center gap-1"
+                              title="Chỉnh sửa file Word"
+                           >
+                              <Edit3 className="h-5 w-5" />
+                              <span className="text-xs font-medium hidden md:inline">Chỉnh sửa</span>
+                           </button>
+                        )}
                         <button className="p-2 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors" title="Tải xuống">
                            <Download className="h-5 w-5" />
                         </button>
@@ -1046,6 +1119,22 @@ const ProfessionalGroupPlans: React.FC = () => {
 
                </div>
             </div>
+         )}
+
+         {/* --- WORD EDITOR MODAL --- */}
+         {isWordEditorOpen && editingItem && (
+            <AdvancedWordEditor
+               fileUrl={(editingItem as any).url}
+               planId={editingItem.id}
+               planTitle={editingItem.title}
+               collectionName="plans"
+               storageFolder="plans"
+               onClose={() => {
+                  setIsWordEditorOpen(false);
+                  setEditingItem(null);
+               }}
+               onSaveSuccess={handleWordEditorSaveSuccess}
+            />
          )}
       </div>
    );

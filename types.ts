@@ -107,8 +107,10 @@ export interface ClassFile {
   type: 'word' | 'excel' | 'pdf' | 'image';
   date: string;
   uploader: string;
+  uploaderId?: string;
   hasNewComments: boolean;
   commentCount: number;
+  comments?: Comment[];
   planType?: 'year' | 'month' | 'week';
   week?: string;
   category?: 'plan' | 'assessment' | 'steam' | 'students';

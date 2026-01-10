@@ -4,7 +4,14 @@
             "*"
         ],
         "method": [
-            "GET"
+            "GET",
+            "HEAD"
+        ],
+        "responseHeader": [
+            "Content-Type",
+            "Content-Length",
+            "Content-Disposition",
+            "Access-Control-Allow-Origin"
         ],
         "maxAgeSeconds": 3600
     }

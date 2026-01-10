@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { MOCK_CLASSES } from '../data/mockData';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
@@ -31,13 +31,14 @@ import {
    AlertCircle,
    Clock,
    CheckCircle2,
-   XCircle
+   XCircle,
+   Edit3
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useNotification } from '../context/NotificationContext';
 import { createNotification } from '../utils/notificationUtils';
 
-import { ClassFile, MonthFolder, ApprovalInfo, UserRole } from '../types';
+import { ClassFile, MonthFolder, ApprovalInfo, UserRole, Comment } from '../types';
 import { MOCK_FOLDERS } from '../data/mockData';
 
 // Helper function to get current school year
@@ -89,10 +90,11 @@ const WEEK_OPTIONS = [
    { value: '4', label: 'Tuần 4' },
 ];
 
-import { collection, query, where, onSnapshot, doc, getDoc, getDocs, deleteDoc, addDoc, serverTimestamp, updateDoc } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, doc, getDoc, getDocs, deleteDoc, addDoc, serverTimestamp, updateDoc, arrayUnion } from 'firebase/firestore';
 import { db, storage } from '../firebase';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { getPreviewUrl } from '../utils/fileUtils';
+import AdvancedWordEditor from '../components/AdvancedWordEditor';
 
 const ClassRecords: React.FC = () => {
    const { classId } = useParams<{ classId: string }>();
@@ -139,12 +141,14 @@ const ClassRecords: React.FC = () => {
    const [planSubTab, setPlanSubTab] = useState<'year' | 'month' | 'week'>('week'); // Default to week (most common)
    const [expandedFolderId, setExpandedFolderId] = useState<string | null>('m11'); // Default open latest month
    const [filter, setFilter] = useState<'all' | 'new' | 'unread'>('all');
+   const [searchQuery, setSearchQuery] = useState('');
 
    // Drawer Interaction
    const [selectedFile, setSelectedFile] = useState<ClassFile | null>(null);
    const [isDrawerOpen, setIsDrawerOpen] = useState(false);
    const [isFullScreenPreviewOpen, setIsFullScreenPreviewOpen] = useState(false);
    const [newComment, setNewComment] = useState('');
+   const commentsEndRef = useRef<HTMLDivElement>(null);
 
    // Upload Modal State
    const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
@@ -167,6 +171,135 @@ const ClassRecords: React.FC = () => {
    const [fileToReject, setFileToReject] = useState<ClassFile | null>(null);
    const [rejectionReason, setRejectionReason] = useState('');
 
+   // Word Editor Modal State
+   const [isWordEditorOpen, setIsWordEditorOpen] = useState(false);
+   const [editingFile, setEditingFile] = useState<ClassFile | null>(null);
+
+   // Comment Edit/Delete State
+   const [editingComment, setEditingComment] = useState<{ id: string, content: string } | null>(null);
+   const [isDeleteCommentModalOpen, setIsDeleteCommentModalOpen] = useState(false);
+   const [commentToDelete, setCommentToDelete] = useState<Comment | null>(null);
+
+   // Permission Check for Edit Button - Only author can edit their own files
+   const canEditFile = (file: ClassFile): boolean => {
+      if (!user) return false;
+      const fileData = file as any;
+      const isOwnerById = fileData.uploaderId && fileData.uploaderId === user.id;
+      const isOwnerByName = fileData.uploader === user.fullName;
+      return isOwnerById || isOwnerByName;
+   };
+
+   // Check if file is a Word document (editable)
+   const isWordFile = (file: ClassFile): boolean => {
+      const fileData = file as any;
+      const fileType = fileData.type;
+      const url = fileData.url || '';
+      const hasWordExtension = url.includes('.docx') || url.includes('.doc');
+      return fileType === 'word' || fileType === 'docx' || hasWordExtension;
+   };
+
+   // Open Word Editor
+   const handleOpenWordEditor = (file: ClassFile, e: React.MouseEvent) => {
+      e.stopPropagation();
+      setEditingFile(file);
+      setIsWordEditorOpen(true);
+   };
+
+   // Handle Word Editor save success
+   const handleWordEditorSaveSuccess = () => {
+      addToast("Lưu thành công", "Tài liệu đã được cập nhật.", "success");
+   };
+
+   // Permission Check for Comment - Based on hierarchy:
+   // - Vice Principal (vice_principal) can comment on Head Teacher/Vice Head Teacher files
+   // - Head Teacher/Vice Head Teacher can comment on Teacher files
+   const canComment = (file: ClassFile): boolean => {
+      if (!user) return false;
+      const fileData = file as any;
+      const uploaderRole = fileData.uploaderRole;
+
+      if (!uploaderRole) return false;
+
+      // Vice Principal can comment on Head Teacher and Vice Head Teacher
+      if (user.role === 'vice_principal') {
+         return ['head_teacher', 'vice_head_teacher'].includes(uploaderRole);
+      }
+
+      // Head Teacher and Vice Head Teacher can comment on Teacher
+      if (['head_teacher', 'vice_head_teacher'].includes(user.role)) {
+         return uploaderRole === 'teacher';
+      }
+
+      return false;
+   };
+
+   // Check if user can edit/delete a specific comment (only own comments)
+   const canManageComment = (comment: Comment): boolean => {
+      if (!user) return false;
+      return comment.userId === user.id;
+   };
+
+   // Handle Edit Comment
+   const handleSaveEditComment = async () => {
+      if (!editingComment || !selectedFile || !user) return;
+
+      try {
+         const fileRef = doc(db, 'class_files', selectedFile.id);
+         const currentComments = (selectedFile as any).comments || [];
+         const updatedComments = currentComments.map((c: Comment) =>
+            c.id === editingComment.id
+               ? { ...c, content: editingComment.content, editedAt: new Date().toISOString() }
+               : c
+         );
+
+         await updateDoc(fileRef, { comments: updatedComments });
+
+         // Update local state
+         setSelectedFile({
+            ...selectedFile,
+            comments: updatedComments
+         } as any);
+
+         setEditingComment(null);
+         addToast("Đã cập nhật góp ý", "Nội dung góp ý đã được lưu.", "success");
+      } catch (error) {
+         console.error("Error editing comment:", error);
+         addToast("Lỗi", "Không thể cập nhật góp ý.", "error");
+      }
+   };
+
+   // Handle Delete Comment
+   const handleConfirmDeleteComment = async () => {
+      if (!commentToDelete || !selectedFile || !user) return;
+
+      try {
+         const fileRef = doc(db, 'class_files', selectedFile.id);
+         const currentComments = (selectedFile as any).comments || [];
+         const updatedComments = currentComments.filter((c: Comment) => c.id !== commentToDelete.id);
+
+         await updateDoc(fileRef, {
+            comments: updatedComments,
+            commentCount: Math.max(0, (selectedFile.commentCount || 0) - 1),
+            hasNewComments: updatedComments.length > 0
+         });
+
+         // Update local state
+         setSelectedFile({
+            ...selectedFile,
+            comments: updatedComments,
+            commentCount: Math.max(0, (selectedFile.commentCount || 0) - 1),
+            hasNewComments: updatedComments.length > 0
+         } as any);
+
+         setIsDeleteCommentModalOpen(false);
+         setCommentToDelete(null);
+         addToast("Đã xóa góp ý", "Góp ý đã được xóa thành công.", "success");
+      } catch (error) {
+         console.error("Error deleting comment:", error);
+         addToast("Lỗi", "Không thể xóa góp ý.", "error");
+      }
+   };
+
    // Kiểm tra quyền duyệt file (Tổ trưởng/Tổ phó duyệt file của giáo viên)
    const canApproveFile = (file: any): boolean => {
       if (!user) return false;
@@ -180,6 +313,44 @@ const ClassRecords: React.FC = () => {
       }
 
       return false;
+   };
+
+   // Filter files based on filter type and search query
+   const getFilteredFiles = (files: any[]): any[] => {
+      let result = [...files];
+
+      // Apply search filter
+      if (searchQuery.trim()) {
+         const query = searchQuery.toLowerCase().trim();
+         result = result.filter(file =>
+            file.name?.toLowerCase().includes(query) ||
+            file.uploader?.toLowerCase().includes(query)
+         );
+      }
+
+      // Apply category filter
+      switch (filter) {
+         case 'new':
+            // Sort by date descending and take recent items (last 7 days)
+            const weekAgo = new Date();
+            weekAgo.setDate(weekAgo.getDate() - 7);
+            result = result.filter(file => new Date(file.date) >= weekAgo)
+               .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+            break;
+         case 'unread':
+            // Only files with comments
+            result = result.filter(file =>
+               (file.comments && file.comments.length > 0) || file.hasNewComments
+            );
+            break;
+         case 'all':
+         default:
+            // No additional filtering, just sort by date
+            result = result.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+            break;
+      }
+
+      return result;
    };
 
    // Xử lý duyệt file
@@ -550,6 +721,7 @@ const ClassRecords: React.FC = () => {
             type: uploadFile.name.split('.').pop()?.toLowerCase() || 'other',
             url: downloadUrl,
             uploader: user.fullName,
+            uploaderId: user.id,
             uploaderRole: user.role, // Lưu vai trò người upload
             date: new Date().toISOString(),
             classId: classId,
@@ -557,6 +729,7 @@ const ClassRecords: React.FC = () => {
             monthName: MONTH_OPTIONS.find(m => m.value === uploadFormData.month)?.label || 'Tháng khác',
             hasNewComments: false,
             commentCount: 0,
+            comments: [],
             createdAt: serverTimestamp(),
             planType: uploadFormData.planType,
             week: uploadFormData.week,
@@ -786,6 +959,8 @@ const ClassRecords: React.FC = () => {
                   <input
                      type="text"
                      placeholder="Tìm nhanh kế hoạch..."
+                     value={searchQuery}
+                     onChange={(e) => setSearchQuery(e.target.value)}
                      className="pl-9 pr-4 py-2 w-full sm:w-64 bg-white border border-amber-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
                   />
                </div>
@@ -833,7 +1008,10 @@ const ClassRecords: React.FC = () => {
                               // Note: Our folders structure groups by month, but 'year' plans might technically have a month or not.
                               // If we want to show ALL year plans regardless of month, we should look at the raw files or iterate all folders.
                               // Since 'folders' state contains all files grouped by month, we can iterate.
-                              const yearFiles = folders.flatMap(f => f.files).filter(f => f.planType === 'year');
+                              let yearFiles = folders.flatMap(f => f.files).filter(f => f.planType === 'year');
+
+                              // Apply search and filter
+                              yearFiles = getFilteredFiles(yearFiles);
 
                               if (yearFiles.length === 0) {
                                  return <p className="text-gray-400 italic">Chưa có kế hoạch năm nào được tải lên.</p>;
@@ -871,11 +1049,14 @@ const ClassRecords: React.FC = () => {
                         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                            {folders.map((folder) => {
                               // Filter files based on current sub-tab
-                              const visibleFiles = folder.files.filter(f => {
+                              let visibleFiles = folder.files.filter(f => {
                                  if (planSubTab === 'month') return f.planType === 'month';
                                  if (planSubTab === 'week') return f.planType === 'week' || !f.planType; // Backward compatibility
                                  return false;
                               });
+
+                              // Apply search and filter
+                              visibleFiles = getFilteredFiles(visibleFiles);
 
                               // Only show count for relevant files
                               const visibleCount = visibleFiles.length;
@@ -1014,7 +1195,10 @@ const ClassRecords: React.FC = () => {
 
                      {(() => {
                         // Filter files with category 'students'
-                        const studentFiles = allFiles.filter(f => f.category === 'students');
+                        let studentFiles = allFiles.filter(f => f.category === 'students');
+
+                        // Apply search and filter
+                        studentFiles = getFilteredFiles(studentFiles);
 
                         console.log('[Student List Tab] Total files:', allFiles.length, 'Student files:', studentFiles.length);
                         console.log('[Student List Tab] All file categories:', allFiles.map(f => ({ name: f.name, category: f.category })));
@@ -1092,6 +1276,17 @@ const ClassRecords: React.FC = () => {
                         </div>
                      </div>
                      <div className="flex items-center gap-2">
+                        {/* Edit Button - Only show for Word files and file owner */}
+                        {selectedFile && isWordFile(selectedFile) && canEditFile(selectedFile) && (
+                           <button
+                              onClick={(e) => handleOpenWordEditor(selectedFile, e)}
+                              className="p-2 text-gray-500 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition-colors flex items-center gap-1"
+                              title="Chỉnh sửa file Word"
+                           >
+                              <Edit3 className="h-5 w-5" />
+                              <span className="text-xs font-medium hidden md:inline">Chỉnh sửa</span>
+                           </button>
+                        )}
                         <a
                            href={selectedFile.url}
                            target="_blank"
@@ -1153,60 +1348,162 @@ const ClassRecords: React.FC = () => {
                            </h3>
 
                            <div className="space-y-4">
-                              {selectedFile.hasNewComments ? (
-                                 <div className="flex gap-3">
-                                    <div className="h-8 w-8 rounded-full bg-red-100 text-red-700 border border-red-200 flex items-center justify-center text-xs font-bold flex-shrink-0">H</div>
-                                    <div className="bg-gray-50 rounded-xl rounded-tl-none p-3 flex-1 border border-gray-100">
-                                       <div className="flex items-baseline gap-2 mb-1">
-                                          <span className="text-xs font-bold text-gray-900">Hiệu Trưởng</span>
-                                          <span className="text-[10px] text-gray-500">Ban Giám Hiệu</span>
+                              {((selectedFile as any).comments || []).length > 0 ? (
+                                 ((selectedFile as any).comments || []).map((c: Comment) => (
+                                    <div key={c.id} className="flex gap-3 group">
+                                       <div className="h-8 w-8 rounded-full bg-amber-100 text-amber-700 border border-amber-200 flex items-center justify-center text-xs font-bold flex-shrink-0">
+                                          {c.userName?.charAt(0) || 'U'}
                                        </div>
-                                       <p className="text-sm text-gray-800 leading-relaxed">
-                                          Cô Lan lưu ý bổ sung thêm hoạt động ngoài trời cho chủ đề này nhé. Phần mục tiêu cần rõ ràng hơn theo chuẩn độ tuổi.
-                                       </p>
-                                       <p className="text-[10px] text-gray-400 mt-1">Vừa xong</p>
+                                       <div className="bg-gray-50 rounded-xl rounded-tl-none p-3 flex-1 border border-gray-100 relative">
+                                          <div className="flex justify-between items-start mb-1">
+                                             <div className="flex flex-col">
+                                                <span className="text-xs font-bold text-gray-900">{c.userName}</span>
+                                                <span className="text-[10px] text-gray-500">{c.userRole}</span>
+                                             </div>
+                                             {/* Edit/Delete buttons - only for own comments */}
+                                             {canManageComment(c) && (
+                                                <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                   <button
+                                                      onClick={() => setEditingComment({ id: c.id, content: c.content })}
+                                                      className="p-1 text-gray-400 hover:text-amber-600 hover:bg-amber-50 rounded transition-colors"
+                                                      title="Chỉnh sửa"
+                                                   >
+                                                      <Edit3 className="h-3 w-3" />
+                                                   </button>
+                                                   <button
+                                                      onClick={() => { setCommentToDelete(c); setIsDeleteCommentModalOpen(true); }}
+                                                      className="p-1 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
+                                                      title="Xóa"
+                                                   >
+                                                      <Trash2 className="h-3 w-3" />
+                                                   </button>
+                                                </div>
+                                             )}
+                                          </div>
+
+                                          {/* Show edit mode or content */}
+                                          {editingComment?.id === c.id ? (
+                                             <div className="space-y-2">
+                                                <textarea
+                                                   value={editingComment.content}
+                                                   onChange={(e) => setEditingComment({ ...editingComment, content: e.target.value })}
+                                                   className="w-full text-sm border border-amber-300 rounded-lg p-2 focus:outline-none focus:ring-2 focus:ring-amber-500"
+                                                   rows={2}
+                                                />
+                                                <div className="flex gap-2 justify-end">
+                                                   <button
+                                                      onClick={() => setEditingComment(null)}
+                                                      className="px-2 py-1 text-xs text-gray-600 hover:bg-gray-100 rounded"
+                                                   >
+                                                      Hủy
+                                                   </button>
+                                                   <button
+                                                      onClick={handleSaveEditComment}
+                                                      className="px-2 py-1 text-xs text-white bg-amber-500 hover:bg-amber-600 rounded"
+                                                   >
+                                                      Lưu
+                                                   </button>
+                                                </div>
+                                             </div>
+                                          ) : (
+                                             <p className="text-sm text-gray-800 leading-relaxed">{c.content}</p>
+                                          )}
+
+                                          <p className="text-[10px] text-gray-400 mt-1">
+                                             {new Date(c.timestamp).toLocaleString('vi-VN')}
+                                             {(c as any).editedAt && <span className="ml-1">(đã chỉnh sửa)</span>}
+                                          </p>
+                                       </div>
                                     </div>
-                                 </div>
+                                 ))
                               ) : (
                                  <div className="text-center py-12 flex flex-col items-center text-gray-300">
                                     <MessageCircle className="h-10 w-10 mb-2 opacity-50" />
                                     <span className="text-xs italic">Chưa có góp ý nào.</span>
                                  </div>
                               )}
+                              <div ref={commentsEndRef} />
                            </div>
                         </div>
 
-                        {/* Footer Input */}
-                        <div className="p-4 border-t border-gray-200 bg-gray-50">
-                           <div className="relative">
-                              <input
-                                 type="text"
-                                 className="w-full pl-4 pr-12 py-3 bg-white border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent shadow-sm"
-                                 placeholder="Nhập ý kiến chỉ đạo..."
-                                 value={newComment}
-                                 onChange={(e) => setNewComment(e.target.value)}
-                              />
-                              <button
-                                 onClick={() => {
-                                    if (!newComment.trim() || !user || !selectedFile) return;
-                                    addToast("Đã gửi góp ý", "Nội dung của bạn đã được ghi nhận.", "success");
-                                    createNotification('comment', user, {
-                                       type: 'class',
-                                       name: selectedFile.name,
-                                       targetPath: `/class/${classId}`,
-                                       extraInfo: { classId }
-                                    });
-                                    setNewComment('');
-                                 }}
-                                 className="absolute right-2 top-1/2 transform -translate-y-1/2 p-1.5 bg-amber-600 text-white rounded-lg hover:bg-amber-700 disabled:opacity-50 transition-all"
-                              >
-                                 <Send className="h-4 w-4" />
-                              </button>
+                        {/* Footer Input - Only show if user can comment */}
+                        {canComment(selectedFile) ? (
+                           <div className="p-4 border-t border-gray-200 bg-gray-50">
+                              <div className="relative">
+                                 <input
+                                    type="text"
+                                    className="w-full pl-4 pr-12 py-3 bg-white border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent shadow-sm"
+                                    placeholder="Nhập ý kiến chỉ đạo..."
+                                    value={newComment}
+                                    onChange={(e) => setNewComment(e.target.value)}
+                                 />
+                                 <button
+                                    onClick={async () => {
+                                       if (!newComment.trim() || !user || !selectedFile) return;
+
+                                       const comment: Comment = {
+                                          id: Date.now().toString(),
+                                          userId: user.id,
+                                          userName: user.fullName,
+                                          userRole: user.roleLabel || user.role,
+                                          content: newComment.trim(),
+                                          timestamp: new Date().toISOString()
+                                       };
+
+                                       try {
+                                          const fileRef = doc(db, 'class_files', selectedFile.id);
+                                          await updateDoc(fileRef, {
+                                             comments: arrayUnion(comment),
+                                             hasNewComments: true,
+                                             commentCount: (selectedFile.commentCount || 0) + 1
+                                          });
+
+                                          // Update local state to show new comment immediately
+                                          setSelectedFile({
+                                             ...selectedFile,
+                                             comments: [...((selectedFile as any).comments || []), comment],
+                                             hasNewComments: true,
+                                             commentCount: (selectedFile.commentCount || 0) + 1
+                                          } as any);
+
+                                          // Send Notification to file owner
+                                          createNotification('comment', user, {
+                                             type: 'class',
+                                             name: selectedFile.name,
+                                             targetPath: `/class/${classId}`,
+                                             extraInfo: { classId, uploaderId: (selectedFile as any).uploaderId }
+                                          });
+
+                                          setNewComment('');
+                                          addToast("Đã gửi góp ý", "Nội dung của bạn đã được ghi nhận.", "success");
+
+                                          // Scroll to new comment
+                                          setTimeout(() => {
+                                             commentsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+                                          }, 100);
+                                       } catch (error) {
+                                          console.error("Error adding comment: ", error);
+                                          addToast("Lỗi", "Không thể gửi bình luận.", "error");
+                                       }
+                                    }}
+                                    disabled={!newComment.trim()}
+                                    className="absolute right-2 top-1/2 transform -translate-y-1/2 p-1.5 bg-amber-600 text-white rounded-lg hover:bg-amber-700 disabled:opacity-50 transition-all"
+                                 >
+                                    <Send className="h-4 w-4" />
+                                 </button>
+                              </div>
+                              <p className="text-[10px] text-gray-400 mt-2 text-center flex items-center justify-center gap-1">
+                                 <Lock className="h-2.5 w-2.5" /> Chỉ nội bộ BGH và GVCN xem được.
+                              </p>
                            </div>
-                           <p className="text-[10px] text-gray-400 mt-2 text-center flex items-center justify-center gap-1">
-                              <Lock className="h-2.5 w-2.5" /> Chỉ nội bộ BGH và GVCN xem được.
-                           </p>
-                        </div>
+                        ) : (
+                           <div className="p-4 border-t border-gray-200 bg-gray-50">
+                              <div className="text-center text-xs text-gray-400 py-2">
+                                 <Lock className="h-4 w-4 mx-auto mb-1 opacity-50" />
+                                 Chỉ BGH và Tổ trưởng/phó mới có quyền góp ý.
+                              </div>
+                           </div>
+                        )}
                      </div>
                   </div>
                </div>
@@ -1521,6 +1818,56 @@ const ClassRecords: React.FC = () => {
 
                </div>
             </div>
+         )}
+
+         {/* --- DELETE COMMENT CONFIRMATION MODAL --- */}
+         {isDeleteCommentModalOpen && commentToDelete && (
+            <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40 p-4 animate-in fade-in duration-200">
+               <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 animate-in zoom-in-95 duration-200">
+                  <div className="text-center mb-4">
+                     <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                        <Trash2 className="h-6 w-6 text-red-500" />
+                     </div>
+                     <h3 className="text-lg font-bold text-gray-900">Xóa góp ý</h3>
+                     <p className="text-sm text-gray-500 mt-2">
+                        Bạn có chắc chắn muốn xóa góp ý này? Thao tác này không thể hoàn tác.
+                     </p>
+                  </div>
+                  <div className="bg-gray-50 rounded-lg p-3 mb-4 text-sm text-gray-700 italic">
+                     "{commentToDelete.content.substring(0, 100)}{commentToDelete.content.length > 100 ? '...' : ''}"
+                  </div>
+                  <div className="flex gap-3">
+                     <button
+                        onClick={() => { setIsDeleteCommentModalOpen(false); setCommentToDelete(null); }}
+                        className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 font-medium hover:bg-gray-50 transition-colors"
+                     >
+                        Hủy
+                     </button>
+                     <button
+                        onClick={handleConfirmDeleteComment}
+                        className="flex-1 px-4 py-2 bg-red-500 text-white rounded-lg font-medium hover:bg-red-600 transition-colors"
+                     >
+                        Xóa
+                     </button>
+                  </div>
+               </div>
+            </div>
+         )}
+
+         {/* --- WORD EDITOR MODAL --- */}
+         {isWordEditorOpen && editingFile && (
+            <AdvancedWordEditor
+               fileUrl={(editingFile as any).url}
+               planId={editingFile.id}
+               planTitle={editingFile.name}
+               collectionName="class_files"
+               storageFolder="class_files"
+               onClose={() => {
+                  setIsWordEditorOpen(false);
+                  setEditingFile(null);
+               }}
+               onSaveSuccess={handleWordEditorSaveSuccess}
+            />
          )}
 
       </div>
