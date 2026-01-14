@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0">
+    <title>OnlyOffice Local</title>
+    <style>
+        html,
+        body {
+            height: 100%;
+            width: 100%;
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+        }
+
+        #iframe {
+            height: 100%;
+            width: 100%;
+            border: none;
+        }
+    </style>
+    <script src="glue.js"></script>
+</head>
+
+<body>
+    <div id="iframe"></div>
+    <script>
+        const params = new URLSearchParams(window.location.search);
+        let src = params.get('src');
+        let file = params.get('file'); // Backward comp
+        let url = src || file;
+
+        let filename = params.get('filename') || 'document.docx';
+
+        // Handle hash params if necessary
+        if (!url && window.location.hash.includes('?')) {
+            const hashParams = new URLSearchParams(window.location.hash.split('?')[1]);
+            url = hashParams.get('src') || hashParams.get('file') || hashParams.get('url');
+            if (!filename) filename = hashParams.get('filename');
+        }
+
+        if (url && window.RanutsGlue) {
+            window.RanutsGlue.init(url, filename).catch(err => {
+                console.error("Init Error", err);
+                document.body.innerHTML = `<h3 style='color:red; padding: 20px'>Error loading document: ${err.message}</h3>`;
+            });
+        } else {
+            document.body.innerHTML = "<h3 style='padding: 20px'>No document URL provided (src param)</h3>";
+        }
+    </script>
+</body>
+
+</html>

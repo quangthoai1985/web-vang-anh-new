@@ -34,7 +34,7 @@ import { createNotification } from '../utils/notificationUtils';
 import { storage } from '../firebase';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { getPreviewUrl } from '../utils/fileUtils';
-import AdvancedWordEditor from '../components/AdvancedWordEditor';
+import IntegratedFileViewer from '../components/IntegratedFileViewer';
 
 // --- Interfaces for this page ---
 interface GroupPlan {
@@ -148,10 +148,10 @@ const ProfessionalGroupPlans: React.FC = () => {
       }
    }, [searchParams, plans, minutes, setSearchParams]);
 
-   // UI State
    const [selectedItem, setSelectedItem] = useState<GroupPlan | MeetingMinute | null>(null);
-   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
-   const [isFullScreenPreviewOpen, setIsFullScreenPreviewOpen] = useState(false);
+   const [isFileViewerOpen, setIsFileViewerOpen] = useState(false);
+   const [isDrawerOpen, setIsDrawerOpen] = useState(false); // Kept for legacy, not used
+   const [isFullScreenPreviewOpen, setIsFullScreenPreviewOpen] = useState(false); // Kept for legacy, not used
    const [newComment, setNewComment] = useState('');
    const commentsEndRef = useRef<HTMLDivElement>(null);
 
@@ -248,8 +248,8 @@ const ProfessionalGroupPlans: React.FC = () => {
       setIsWordEditorOpen(true);
    };
 
-   // Handle Word Editor save success
-   const handleWordEditorSaveSuccess = () => {
+   // Handle File Viewer save success
+   const handleFileViewerSaveSuccess = () => {
       addToast("Lưu thành công", "Tài liệu đã được cập nhật.", "success");
    };
 
@@ -388,7 +388,7 @@ const ProfessionalGroupPlans: React.FC = () => {
 
    const handleItemClick = (item: GroupPlan | MeetingMinute) => {
       setSelectedItem(item);
-      setIsDrawerOpen(true);
+      setIsFileViewerOpen(true);
    };
 
    // Permission Check for Deletion - Only author can delete
@@ -1618,23 +1618,51 @@ const ProfessionalGroupPlans: React.FC = () => {
             )
          }
 
-         {/* --- WORD EDITOR MODAL --- */}
+         {/* --- INTEGRATED FILE VIEWER --- */}
          {
-            isWordEditorOpen && editingItem && (
-               <AdvancedWordEditor
-                  fileUrl={(editingItem as any).url}
-                  planId={editingItem.id}
-                  planTitle={editingItem.title}
+            isFileViewerOpen && selectedItem && (
+               <IntegratedFileViewer
+                  file={{
+                     id: selectedItem.id,
+                     name: selectedItem.title,
+                     url: (selectedItem as any).url || '',
+                     type: (selectedItem as any).fileType,
+                     uploader: selectedItem.uploader,
+                     uploaderId: (selectedItem as any).uploaderId,
+                     uploaderRole: selectedItem.uploaderRole,
+                     date: (selectedItem as any).uploadDate,
+                     comments: selectedItem.comments || [],
+                     commentCount: selectedItem.commentCount || 0,
+                     approval: selectedItem.approval,
+                     status: selectedItem.approval?.status || 'pending'
+                  }}
+                  onClose={() => {
+                     setIsFileViewerOpen(false);
+                     setSelectedItem(null);
+                  }}
+                  onSaveSuccess={handleFileViewerSaveSuccess}
                   collectionName="plans"
                   storageFolder="plans"
-                  onClose={() => {
-                     setIsWordEditorOpen(false);
-                     setEditingItem(null);
+                  canEdit={canEdit(selectedItem)}
+                  canApprove={canApprove(selectedItem)}
+                  canComment={canComment(selectedItem)}
+                  canRespond={canRespond(selectedItem)}
+                  onApprove={() => handleApprove(selectedItem)}
+                  onRequestRevision={(reason) => {
+                     setItemToReject(selectedItem);
+                     setRejectionReason(reason);
+                     handleRequestRevision();
                   }}
-                  onSaveSuccess={handleWordEditorSaveSuccess}
+                  onPostComment={(content, type) => {
+                     if (type === 'response') {
+                        setNewComment(content);
+                        handleResponse({ preventDefault: () => { } } as React.FormEvent);
+                     }
+                  }}
                />
             )
          }
+
 
          {/* Delete Comment Modal */}
          {isDeleteCommentModalOpen && (

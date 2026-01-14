@@ -95,8 +95,7 @@ const WEEK_OPTIONS = [
 import { collection, query, where, onSnapshot, doc, getDoc, getDocs, deleteDoc, addDoc, serverTimestamp, updateDoc, arrayUnion, deleteField } from 'firebase/firestore';
 import { db, storage } from '../firebase';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { getPreviewUrl } from '../utils/fileUtils';
-import AdvancedWordEditor from '../components/AdvancedWordEditor';
+import IntegratedFileViewer from '../components/IntegratedFileViewer';
 
 const ClassRecords: React.FC = () => {
    const { classId } = useParams<{ classId: string }>();
@@ -149,10 +148,9 @@ const ClassRecords: React.FC = () => {
    const [filter, setFilter] = useState<'all' | 'new' | 'unread'>('all');
    const [searchQuery, setSearchQuery] = useState('');
 
-   // Drawer Interaction
+   // File Viewer
    const [selectedFile, setSelectedFile] = useState<ClassFile | null>(null);
-   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
-   const [isFullScreenPreviewOpen, setIsFullScreenPreviewOpen] = useState(false);
+   const [isFileViewerOpen, setIsFileViewerOpen] = useState(false);
    const [newComment, setNewComment] = useState('');
    const commentsEndRef = useRef<HTMLDivElement>(null);
 
@@ -177,10 +175,6 @@ const ClassRecords: React.FC = () => {
    const [fileToReject, setFileToReject] = useState<ClassFile | null>(null);
    const [rejectionReason, setRejectionReason] = useState('');
 
-   // Word Editor Modal State
-   const [isWordEditorOpen, setIsWordEditorOpen] = useState(false);
-   const [editingFile, setEditingFile] = useState<ClassFile | null>(null);
-
    // Comment Edit/Delete State
    const [editingComment, setEditingComment] = useState<{ id: string, content: string } | null>(null);
    const [isDeleteCommentModalOpen, setIsDeleteCommentModalOpen] = useState(false);
@@ -195,24 +189,15 @@ const ClassRecords: React.FC = () => {
       return isOwnerById || isOwnerByName;
    };
 
-   // Check if file is a Word document (editable)
-   const isWordFile = (file: ClassFile): boolean => {
-      const fileData = file as any;
-      const fileType = fileData.type;
-      const url = fileData.url || '';
-      const hasWordExtension = url.includes('.docx') || url.includes('.doc');
-      return fileType === 'word' || fileType === 'docx' || hasWordExtension;
+   // Open File Viewer - Replaces old Word Editor and Preview
+   const handleOpenFileViewer = (file: ClassFile, e?: React.MouseEvent) => {
+      if (e) e.stopPropagation();
+      setSelectedFile(file);
+      setIsFileViewerOpen(true);
    };
 
-   // Open Word Editor
-   const handleOpenWordEditor = (file: ClassFile, e: React.MouseEvent) => {
-      e.stopPropagation();
-      setEditingFile(file);
-      setIsWordEditorOpen(true);
-   };
-
-   // Handle Word Editor save success
-   const handleWordEditorSaveSuccess = () => {
+   // Handle File Viewer save success
+   const handleFileViewerSaveSuccess = () => {
       addToast("Lưu thành công", "Tài liệu đã được cập nhật.", "success");
    };
 
@@ -810,9 +795,9 @@ const ClassRecords: React.FC = () => {
                   setHighlightFileId(null);
                }, 3000);
 
-               // Auto-open the drawer with the target file
+               // Auto-open the viewer with the target file
                setSelectedFile(targetFile);
-               setIsDrawerOpen(true);
+               setIsFileViewerOpen(true);
 
                // Clear URL params after processing
                setSearchParams({}, { replace: true });
@@ -864,7 +849,7 @@ const ClassRecords: React.FC = () => {
    const handleFileClick = (file: ClassFile, e: React.MouseEvent) => {
       e.stopPropagation();
       setSelectedFile(file);
-      setIsDrawerOpen(true);
+      setIsFileViewerOpen(true);
    };
 
    const openDeleteModal = (file: ClassFile, folderId: string, e: React.MouseEvent) => {
@@ -1011,58 +996,7 @@ const ClassRecords: React.FC = () => {
    };
 
 
-   // Render file preview using real file URL
-   const renderFilePreview = (isFullScreen: boolean = false) => {
-      if (!selectedFile) return null;
-
-      // Check if file has URL
-      if (selectedFile.url && selectedFile.url !== '#') {
-         const previewUrl = getPreviewUrl(selectedFile.url);
-
-         // Special handling for Excel files (cannot be previewed reliably)
-         if (previewUrl === 'EXCEL_NO_PREVIEW') {
-            return (
-               <div className="flex flex-col items-center justify-center h-full text-gray-600 bg-gray-50 rounded-lg p-8">
-                  <div className="p-4 bg-green-100 rounded-full mb-4">
-                     <FileText className="h-16 w-16 text-green-600" />
-                  </div>
-                  <h3 className="text-lg font-bold text-gray-800 mb-2">File Excel</h3>
-                  <p className="text-sm text-gray-500 mb-6 text-center max-w-md">
-                     File Excel không thể xem trước trực tiếp. Vui lòng tải xuống để xem nội dung.
-                  </p>
-                  <a
-                     href={selectedFile.url}
-                     download={selectedFile.name}
-                     className="flex items-center gap-2 px-6 py-3 bg-green-600 hover:bg-green-700 text-white rounded-lg shadow-md transition-all font-bold"
-                  >
-                     <Download className="h-5 w-5" />
-                     Tải xuống file
-                  </a>
-               </div>
-            );
-         }
-
-         // Normal preview for other file types
-         return (
-            <div className={`${isFullScreen ? 'w-full h-full' : 'w-full h-full'}`}>
-               <iframe
-                  src={previewUrl}
-                  className="w-full h-full border-0"
-                  title="Document Preview"
-               />
-            </div>
-         );
-      } else {
-         // No file URL available
-         return (
-            <div className="flex flex-col items-center justify-center h-full text-gray-500 bg-gray-50 rounded-lg">
-               <FileText className="h-16 w-16 mb-4 text-gray-400" />
-               <p className="text-lg font-medium">Không có bản xem trước</p>
-               <p className="text-sm">Tài liệu này chưa có file đính kèm hoặc file không hỗ trợ xem trước.</p>
-            </div>
-         );
-      }
-   };
+   // renderFilePreview removed - using IntegratedFileViewer instead\n\n
 
    return (
       <div className="min-h-screen bg-amber-50/30 font-sans pb-20">
@@ -1531,8 +1465,8 @@ const ClassRecords: React.FC = () => {
             </div>
          </main>
 
-         {/* --- DRAWER (File Details & Preview) --- */}
-         {isDrawerOpen && selectedFile && (
+         {/* --- OLD DRAWER (Disabled - using IntegratedFileViewer instead) --- */}
+         {false && selectedFile && (
             <div className="fixed inset-0 z-50 overflow-hidden flex justify-end">
                <div
                   className="absolute inset-0 bg-gray-900/40 backdrop-blur-sm transition-opacity"
@@ -1555,12 +1489,12 @@ const ClassRecords: React.FC = () => {
                      </div>
                      <div className="flex items-center gap-2">
 
-                        {/* Edit Button - Only show for Word files and file owner */}
-                        {selectedFile && isWordFile(selectedFile) && canEditFile(selectedFile) && (
+                        {/* Edit Button - Click file to open in editor */}
+                        {selectedFile && canEditFile(selectedFile) && (
                            <button
-                              onClick={(e) => handleOpenWordEditor(selectedFile, e)}
+                              onClick={() => handleOpenFileViewer(selectedFile)}
                               className="p-2 text-gray-500 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition-colors flex items-center gap-1"
-                              title="Chỉnh sửa file Word"
+                              title="Mở trong trình soạn thảo"
                            >
                               <Edit3 className="h-5 w-5" />
                               <span className="text-xs font-medium hidden md:inline">Chỉnh sửa</span>
@@ -1774,45 +1708,8 @@ const ClassRecords: React.FC = () => {
          )
          }
 
-         {/* --- FULL SCREEN PREVIEW MODAL --- */}
-         {
-            isFullScreenPreviewOpen && selectedFile && (
-               <div className="fixed inset-0 z-[60] bg-black/90 backdrop-blur-sm flex flex-col animate-in fade-in duration-200">
-                  {/* Top Bar */}
-                  <div className="flex items-center justify-between px-6 py-4 bg-black/50 text-white backdrop-blur-md z-10">
-                     <div className="flex items-center gap-4">
-                        <div className="p-2 bg-white/10 rounded-lg backdrop-blur-sm">
-                           <FileText className="h-6 w-6 text-white" />
-                        </div>
-                        <div>
-                           <h2 className="text-lg font-bold text-white leading-none">{selectedFile.name}</h2>
-                           <p className="text-xs text-white/60 mt-1">Chế độ xem toàn màn hình</p>
-                        </div>
-                     </div>
-                     <div className="flex items-center gap-3">
-                        <button className="p-2 hover:bg-white/20 rounded-full transition-colors" title="Thu nhỏ">
-                           <ZoomOut className="h-5 w-5" />
-                        </button>
-                        <button className="p-2 hover:bg-white/20 rounded-full transition-colors" title="Phóng to">
-                           <ZoomIn className="h-5 w-5" />
-                        </button>
-                        <div className="w-px h-6 bg-white/20 mx-1"></div>
-                        <button
-                           onClick={() => setIsFullScreenPreviewOpen(false)}
-                           className="p-2 hover:bg-red-500/80 hover:text-white bg-white/10 rounded-full transition-colors"
-                        >
-                           <X className="h-6 w-6" />
-                        </button>
-                     </div>
-                  </div>
+         {/* Fullscreen preview removed - using IntegratedFileViewer */}
 
-                  {/* Content Area */}
-                  <div className="flex-1 overflow-auto p-8 flex justify-center custom-scrollbar bg-neutral-900/50">
-                     {renderFilePreview(true)}
-                  </div>
-               </div>
-            )
-         }
 
          {/* Delete Confirmation Modal */}
          {
@@ -2127,20 +2024,44 @@ const ClassRecords: React.FC = () => {
             )
          }
 
-         {/* --- WORD EDITOR MODAL --- */}
+         {/* --- INTEGRATED FILE VIEWER --- */}
          {
-            isWordEditorOpen && editingFile && (
-               <AdvancedWordEditor
-                  fileUrl={(editingFile as any).url}
-                  planId={editingFile.id}
-                  planTitle={editingFile.name}
+            isFileViewerOpen && selectedFile && (
+               <IntegratedFileViewer
+                  file={{
+                     id: selectedFile.id,
+                     name: selectedFile.name,
+                     url: (selectedFile as any).url || '',
+                     type: (selectedFile as any).type,
+                     uploader: (selectedFile as any).uploader,
+                     uploaderId: (selectedFile as any).uploaderId,
+                     uploaderRole: (selectedFile as any).uploaderRole,
+                     date: (selectedFile as any).date,
+                     comments: (selectedFile as any).comments,
+                     approval: (selectedFile as any).approval
+                  }}
+                  onClose={() => {
+                     setIsFileViewerOpen(false);
+                     setSelectedFile(null);
+                  }}
+                  onSaveSuccess={handleFileViewerSaveSuccess}
                   collectionName="class_files"
                   storageFolder="class_files"
-                  onClose={() => {
-                     setIsWordEditorOpen(false);
-                     setEditingFile(null);
+                  canEdit={canEditFile(selectedFile)}
+                  canApprove={canApproveFile && canApproveFile(selectedFile)}
+                  canComment={canComment(selectedFile)}
+                  canRespond={canRespond(selectedFile)}
+                  onApprove={() => handleApproveFile(selectedFile)}
+                  onRequestRevision={(reason: string) => {
+                     setFileToReject(selectedFile);
+                     setRejectionReason(reason);
+                     handleRequestRevision();
                   }}
-                  onSaveSuccess={handleWordEditorSaveSuccess}
+                  onPostComment={(content: string) => {
+                     setNewComment(content);
+                     const fakeEvent = { preventDefault: () => { } } as React.FormEvent;
+                     handleResponse(fakeEvent);
+                  }}
                />
             )
          }

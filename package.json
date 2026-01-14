@@ -9,22 +9,15 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@syncfusion/ej2-base": "^32.1.22",
-    "@syncfusion/ej2-react-documenteditor": "^32.1.22",
-    "docx": "^9.5.1",
-    "docx-preview": "^0.3.7",
-    "file-saver": "^2.0.5",
     "firebase": "^12.6.0",
     "firebase-admin": "^13.6.0",
     "firebase-functions": "^7.0.0",
     "lucide-react": "^0.554.0",
-    "mammoth": "^1.11.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "react-router-dom": "^7.9.6"
   },
   "devDependencies": {
-    "@types/file-saver": "^2.0.7",
     "@types/node": "^22.14.0",
     "@vitejs/plugin-react": "^5.0.0",
     "typescript": "~5.8.2",

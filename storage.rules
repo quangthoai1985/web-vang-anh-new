@@ -133,5 +133,18 @@ service firebase.storage {
       // Chỉ Admin write (check both token and Firestore)
       allow write: if isAdmin();
     }
+    // 7. Folder Chữ ký (signatures) - Public read cho Editor iframe
+    match /signatures/{userId}/{allPaths=**} {
+      // Ai cũng đọc được (cho Editor iframe từ origin khác fetch ảnh)
+      allow read: if true;
+      // Chỉ user sở hữu được ghi (hoặc Admin)
+      allow write: if isAuthenticated() && (request.auth.uid == userId || isAdmin());
+    }
+    
+    // 8. Folder Avatars - Public read
+    match /avatars/{userId}/{allPaths=**} {
+      allow read: if true;
+      allow write: if isAuthenticated() && (request.auth.uid == userId || isAdmin());
+    }
   }
 }

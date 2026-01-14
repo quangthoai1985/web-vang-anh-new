@@ -1,0 +1,3 @@
+﻿Match at 270419
+ssage}`),p}}function o(v){A.value&&(A.value.destroyEditor(),A.value=null);const{fileName:p,fileType:g,binData:m,media:h}=v;A.value=new window.DocsAPI.DocEditor("iframe",{document:{title:p,url:p,fileType:g,permissions:{edit:!0,chat:!1,protect:!1}},editorConfig:{lang:"en",customization:{help:!1,about:!1,hideRightMenu:!0,features:{spellcheck:{change:!1}},anonymous:{request:!1,label:"Guest"}}},events:{onAppReady:()=>{h&&A.value.sendCommand({command:"
+---------------------------------------------------
