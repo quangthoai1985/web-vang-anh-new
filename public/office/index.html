@@ -33,16 +33,20 @@
         let url = src || file;
 
         let filename = params.get('filename') || 'document.docx';
+        let mode = params.get('mode') || 'edit'; // Default to edit for all users
+        let canSave = params.get('canSave') !== 'false'; // Default to true unless explicitly 'false'
 
         // Handle hash params if necessary
         if (!url && window.location.hash.includes('?')) {
             const hashParams = new URLSearchParams(window.location.hash.split('?')[1]);
             url = hashParams.get('src') || hashParams.get('file') || hashParams.get('url');
             if (!filename) filename = hashParams.get('filename');
+            if (!mode) mode = hashParams.get('mode') || 'edit';
+            if (hashParams.get('canSave') === 'false') canSave = false;
         }
 
         if (url && window.RanutsGlue) {
-            window.RanutsGlue.init(url, filename).catch(err => {
+            window.RanutsGlue.init(url, filename, mode, canSave).catch(err => {
                 console.error("Init Error", err);
                 document.body.innerHTML = `<h3 style='color:red; padding: 20px'>Error loading document: ${err.message}</h3>`;
             });

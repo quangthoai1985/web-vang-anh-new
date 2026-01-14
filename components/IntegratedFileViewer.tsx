@@ -71,6 +71,8 @@ const IntegratedFileViewer: React.FC<IntegratedFileViewerProps> = ({
     const [loadError, setLoadError] = useState<string | null>(null);
     const { user } = useAuth();
     const iframeRef = useRef<HTMLIFrameElement>(null);
+    // Use a ref to keep the timestamp stable across re-renders (like toast updates)
+    const timestampRef = useRef(Date.now());
 
     const showToast = (message: string, type: 'success' | 'error' | 'info' = 'info') => {
         setToast({ message, type });
@@ -99,22 +101,7 @@ const IntegratedFileViewer: React.FC<IntegratedFileViewerProps> = ({
         return !['pdf'].includes(ext);
     };
 
-    // Fetch user signature
-    useEffect(() => {
-        const fetchSignature = async () => {
-            if (!user) return;
-            try {
-                const userDocRef = doc(db, 'users', user.id);
-                const userDoc = await getDoc(userDocRef);
-                if (userDoc.exists() && userDoc.data().signatureUrl) {
-                    setSignatureUrl(userDoc.data().signatureUrl);
-                }
-            } catch (error) {
-                console.error('Error fetching signature:', error);
-            }
-        };
-        fetchSignature();
-    }, [user]);
+
 
 
     // Use direct file URL for the editor
@@ -122,8 +109,14 @@ const IntegratedFileViewer: React.FC<IntegratedFileViewerProps> = ({
     // 1. It duplicates memory usage (Browser logic + WASM logic)
     // 2. OnlyOffice/x2t WASM handles fetching internally
     // 3. Reduces chance of out-of-memory errors for large files
+    // File loading is handled by the iframe/viewer itself.
+    // We just need to ensure file.url exists.
     useEffect(() => {
-        setLocalFileUrl(file.url);
+        if (file.url) {
+            setLocalFileUrl(file.url);
+            setLoadError(null);
+            // Loading indicator will be hidden by iframe onLoad
+        }
     }, [file.url]);
 
 
@@ -140,6 +133,19 @@ const IntegratedFileViewer: React.FC<IntegratedFileViewerProps> = ({
                     : `Lỗi tải tài liệu: ${event.data.message}`;
                 setLoadError(errorMsg);
                 setIsLoading(false);
+            }
+            if (event.data.type === 'SAVE_NOT_ALLOWED') {
+                showToast(event.data.message || 'Bạn không phải là tác giả của file, vui lòng liên hệ tác giả để yêu cầu chỉnh sửa.', 'error');
+            }
+            if (event.data.type === 'SAVE_ERROR') {
+                console.error('Save error from editor:', event.data.message);
+                // Suppress "code: 88" error as requested by user (it's often a false positive alongside success)
+                if (event.data.message && (event.data.message.includes('code: 88') || event.data.message.includes('code 88'))) {
+                    console.log('Ignored error code 88 toast');
+                } else {
+                    showToast('Lỗi khi lưu: ' + (event.data.message || 'Unknown error'), 'error');
+                }
+                setIsSaving(false);
             }
         };
         window.addEventListener('message', handleMessage);
@@ -239,22 +245,7 @@ const IntegratedFileViewer: React.FC<IntegratedFileViewerProps> = ({
                     </div>
 
                     <div className="flex items-center gap-2">
-                        {/* Signature button - only for Word files */}
-                        {getFileExtension() === 'docx' && canEdit && (
-                            <button
-                                onClick={() => {
-                                    if (!signatureUrl) {
-                                        showToast('Bạn chưa cập nhật chữ ký.', 'error');
-                                        return;
-                                    }
-                                    setShowSignaturePanel(!showSignaturePanel);
-                                }}
-                                className={`px-3 py-1.5 text-sm text-white rounded font-medium flex items-center gap-1.5 transition-colors ${showSignaturePanel ? 'bg-green-600' : 'bg-indigo-500 hover:bg-indigo-600'}`}
-                            >
-                                <PenLine className="h-4 w-4" />
-                                Chữ ký
-                            </button>
-                        )}
+
 
                         <div className="text-xs bg-blue-800 px-2 py-1 rounded text-blue-200">
                             {isSaving ? 'Đang lưu...' : 'Tự động lưu khi Save'}
@@ -306,10 +297,11 @@ const IntegratedFileViewer: React.FC<IntegratedFileViewerProps> = ({
                         </div>
                     ) : (
                         <>
-                            {localFileUrl && (
+                            {file.url && (
+                                /* Use Ranuts X2T for all users - canSave controls save permission */
                                 <iframe
                                     ref={iframeRef}
-                                    src={`/office/index.html?t=${Date.now()}&src=${encodeURIComponent(localFileUrl)}&filename=${encodeURIComponent(getEditorFilename())}&locale=en`}
+                                    src={`/office/index.html?t=${timestampRef.current}&src=${encodeURIComponent(file.url)}&filename=${encodeURIComponent(getEditorFilename())}&locale=en&mode=edit&canSave=${canEdit && isEditable() ? 'true' : 'false'}`}
                                     className="w-full h-full border-none"
                                     title="Document Editor"
                                     onLoad={() => setIsLoading(false)}
@@ -418,26 +410,7 @@ const IntegratedFileViewer: React.FC<IntegratedFileViewerProps> = ({
                 </div>
             </div>
 
-            {/* Floating Signature Panel */}
-            {showSignaturePanel && signatureUrl && (
-                <div className="fixed top-20 right-96 z-[80] bg-white rounded-xl shadow-2xl border border-gray-200 p-4 w-56">
-                    <div className="flex items-center justify-between mb-2">
-                        <h4 className="font-semibold text-gray-800 text-sm flex items-center gap-1">
-                            <PenLine className="h-4 w-4 text-indigo-600" /> Chữ ký
-                        </h4>
-                        <button onClick={() => setShowSignaturePanel(false)} className="p-1 hover:bg-gray-100 rounded-full">
-                            <X className="h-4 w-4 text-gray-500" />
-                        </button>
-                    </div>
-                    <p className="text-xs text-gray-500 mb-2">Kéo thả vào văn bản</p>
-                    <div
-                        className="rounded-lg border-2 border-dashed border-indigo-300 p-2 cursor-grab hover:border-indigo-500 transition-all"
-                        style={{ background: `repeating-conic-gradient(#f3f4f6 0% 25%, transparent 0% 50%) 50% / 10px 10px` }}
-                    >
-                        <img src={signatureUrl} alt="Chữ ký" className="max-w-full max-h-16 object-contain mx-auto" draggable="true" />
-                    </div>
-                </div>
-            )}
+
 
             {/* Reject Modal */}
             {showRejectModal && (

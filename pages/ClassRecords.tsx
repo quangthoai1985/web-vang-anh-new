@@ -2046,7 +2046,7 @@ const ClassRecords: React.FC = () => {
                   }}
                   onSaveSuccess={handleFileViewerSaveSuccess}
                   collectionName="class_files"
-                  storageFolder="class_files"
+                  storageFolder={`class-files/${classId}`}
                   canEdit={canEditFile(selectedFile)}
                   canApprove={canApproveFile && canApproveFile(selectedFile)}
                   canComment={canComment(selectedFile)}
