@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import useMobile from '../hooks/useMobile';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
    ChevronRight,
@@ -23,7 +24,12 @@ import {
    Maximize2,
    XCircle,
    Edit3,
-   Lock
+   Lock,
+   Info,
+   Menu,
+   ChevronUp,
+   ChevronDown,
+   ExternalLink
 } from 'lucide-react';
 import { Comment, ApprovalInfo, UserRole } from '../types';
 import { useAuth } from '../context/AuthContext';
@@ -33,7 +39,7 @@ import { collection, doc, query, where, orderBy, getDocs, updateDoc, deleteDoc, 
 import { createNotification } from '../utils/notificationUtils';
 import { storage } from '../firebase';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { getPreviewUrl } from '../utils/fileUtils';
+import { getPreviewUrl, isOfficeFile } from '../utils/fileUtils';
 import IntegratedFileViewer from '../components/IntegratedFileViewer';
 
 // --- Interfaces for this page ---
@@ -62,6 +68,7 @@ interface MeetingMinute {
    status: 'finalized' | 'draft'; // Đã chốt | Đang thảo luận
    type: 'minute';
    comments: Comment[];
+   commentCount?: number;
    approval?: ApprovalInfo; // Thông tin phê duyệt
 }
 
@@ -77,6 +84,8 @@ const ProfessionalGroupPlans: React.FC = () => {
    const { addToast } = useNotification();
    const [searchParams, setSearchParams] = useSearchParams();
    const { currentSchoolYear } = useSchoolYear();
+   const isMobile = useMobile();
+   const [isMobileInfoOpen, setIsMobileInfoOpen] = useState(false);
 
    // Highlight state for notification navigation
    const [highlightFileId, setHighlightFileId] = useState<string | null>(null);
@@ -136,8 +145,8 @@ const ProfessionalGroupPlans: React.FC = () => {
          return;
       }
 
-      const foundPlan = plans.find(p => p.id === fileId);
-      const foundMinute = minutes.find(m => m.id === fileId);
+      const foundPlan = plans.find((p: GroupPlan) => p.id === fileId);
+      const foundMinute = minutes.find((m: MeetingMinute) => m.id === fileId);
       const foundItem = foundPlan || foundMinute;
 
       if (foundItem) {
@@ -321,7 +330,7 @@ const ProfessionalGroupPlans: React.FC = () => {
          addToast("Đã duyệt", `Đã duyệt hồ sơ "${item.title}".`, "success");
 
          // Notify uploader
-         await createNotification('system', user, {
+         await createNotification('system', user as any, {
             type: 'group',
             name: `Đã duyệt: ${item.title}`,
             targetPath: '/to-chuyen-mon-ke-hoach',
@@ -405,7 +414,7 @@ const ProfessionalGroupPlans: React.FC = () => {
          addToast("Đã gửi yêu cầu sửa", `Đã yêu cầu sửa lại hồ sơ "${itemToReject.title}".`, "success");
 
          // Notify uploader with HIGHLIGHT params
-         await createNotification('comment', user, {
+         await createNotification('comment', user as any, {
             type: 'group',
             name: `Yêu cầu sửa: ${itemToReject.title}`,
             targetPath: `/to-chuyen-mon-ke-hoach?fileId=${itemToReject.id}&highlight=true`, // Updated path
@@ -526,7 +535,7 @@ const ProfessionalGroupPlans: React.FC = () => {
          // If no reviewerId, maybe generic notification?
 
          if (targetId && targetId !== user.id) {
-            await createNotification('comment', user, {
+            await createNotification('comment', user as any, {
                type: 'group',
                name: `Phản hồi từ ${user.fullName}: ${selectedItem.title}`,
                targetPath: `/to-chuyen-mon-ke-hoach?fileId=${selectedItem.id}&highlight=true`,
@@ -552,7 +561,7 @@ const ProfessionalGroupPlans: React.FC = () => {
 
       try {
          const docRef = doc(db, 'plans', selectedItem.id);
-         const updatedComments = selectedItem.comments!.filter(c => c.id !== commentToDelete.id);
+         const updatedComments = selectedItem.comments!.filter((c: Comment) => c.id !== commentToDelete.id);
 
          const updateData: any = {
             comments: updatedComments,
@@ -572,7 +581,9 @@ const ProfessionalGroupPlans: React.FC = () => {
                updateData['approval.status'] = 'pending';
                updateData['approval.rejectionReason'] = deleteField();
 
-               addToast("Đã hoàn tác", "Yêu cầu sửa đã bị xóa. Trạng thái hồ sơ trở về 'Chờ duyệt'.", "info");
+               updateData['approval.rejectionReason'] = deleteField();
+
+               addToast("Đã hoàn tác", "Yêu cầu sửa đã bị xóa. Trạng thái hồ sơ trở về 'Chờ duyệt'.", "success");
             }
          }
 
@@ -693,7 +704,7 @@ const ProfessionalGroupPlans: React.FC = () => {
          setEditingContent('');
 
          // Notify about edit
-         await createNotification('comment', user, {
+         await createNotification('comment', user as any, {
             type: 'group',
             name: `Đã sửa góp ý: ${item.title}`,
             targetPath: '/to-chuyen-mon-ke-hoach',
@@ -729,7 +740,7 @@ const ProfessionalGroupPlans: React.FC = () => {
          const file = e.dataTransfer.files[0];
          setUploadFile(file);
          if (!uploadFormData.name) {
-            setUploadFormData(prev => ({ ...prev, name: file.name.split('.')[0] }));
+            setUploadFormData((prev: any) => ({ ...prev, name: file.name.split('.')[0] }));
          }
       }
    };
@@ -739,7 +750,7 @@ const ProfessionalGroupPlans: React.FC = () => {
          const file = e.target.files[0];
          setUploadFile(file);
          if (!uploadFormData.name) {
-            setUploadFormData(prev => ({ ...prev, name: file.name.split('.')[0] }));
+            setUploadFormData((prev: any) => ({ ...prev, name: file.name.split('.')[0] }));
          }
       }
    };
@@ -785,7 +796,7 @@ const ProfessionalGroupPlans: React.FC = () => {
 
          // Send Notification
          if (user) {
-            await createNotification('upload', user, {
+            await createNotification('upload', user as any, {
                type: 'group',
                name: uploadFormData.name,
                targetPath: '/to-chuyen-mon-ke-hoach'
@@ -828,14 +839,29 @@ const ProfessionalGroupPlans: React.FC = () => {
                </div>
             );
          }
-
          return (
-            <div className={`${isFullScreen ? 'w-full h-full' : 'w-full h-full'}`}>
+            <div className={`${isFullScreen ? 'w-full h-full' : 'w-full h-full'} relative group`}>
                <iframe
                   src={previewUrl}
                   className="w-full h-full border-0"
                   title="Document Preview"
+                  sandbox="allow-scripts allow-same-origin allow-popups"
                />
+
+               {/* Mobile Fallback/Open Button Overlay */}
+               {isMobile && isOfficeFile(itemUrl) && (
+                  <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-10 w-full px-4">
+                     <a
+                        href={previewUrl} // Use preview URL which might be Google Viewer
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center justify-center gap-2 w-full py-3 bg-white/90 backdrop-blur-sm text-gray-800 border border-gray-200 font-bold rounded-xl shadow-lg hover:bg-gray-50 transition-all font-sans"
+                     >
+                        <ExternalLink className="h-4 w-4" />
+                        Mở trong cửa sổ mới
+                     </a>
+                  </div>
+               )}
             </div>
          );
       } else {
@@ -850,44 +876,132 @@ const ProfessionalGroupPlans: React.FC = () => {
       }
    };
 
+   // Helper to render history (used in both Desktop Sidebar and Mobile Sheet)
+   const renderHistory = () => {
+      if (!selectedItem) return null;
+      return (
+         <div className="flex-1 flex flex-col h-full bg-gray-50">
+            {/* Meta Info */}
+            <div className="p-4 border-b border-gray-100 bg-white">
+               <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs text-gray-500">Người đăng</span>
+                  <span className="text-xs font-bold text-gray-800">{selectedItem.uploader || 'Không rõ'}</span>
+               </div>
+               <div className="flex items-center justify-between">
+                  <span className="text-xs text-gray-500">Ngày tải lên</span>
+                  <span className="text-xs font-bold text-gray-800">{new Date((selectedItem as any).uploadDate || (selectedItem as any).date || (selectedItem as any).createdAt || Date.now()).toLocaleDateString('vi-VN')}</span>
+               </div>
+            </div>
+
+            <div className="p-4 bg-white border-b border-gray-100 shadow-sm flex items-center gap-2">
+               <MessageSquare className="h-5 w-5 text-gray-500" />
+               <h3 className="font-bold text-gray-800">Lịch sử Yêu cầu & Phản hồi</h3>
+            </div>
+
+            {/* List of Revisions */}
+            <div className="flex-1 overflow-y-auto p-4 space-y-4 font-sans">
+               {/* Show initial alert if needs revision (Hide if matches last history item) */}
+               {selectedItem.approval?.status === 'needs_revision' &&
+                  selectedItem.approval?.rejectionReason &&
+                  !(selectedItem.comments?.length &&
+                     selectedItem.comments[selectedItem.comments.length - 1].type === 'request' &&
+                     selectedItem.comments[selectedItem.comments.length - 1].content === selectedItem.approval.rejectionReason) && (
+                     <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-4 group relative">
+                        <div className="flex justify-between items-start">
+                           <div>
+                              <h4 className="text-xs font-bold text-amber-800 uppercase mb-1 flex items-center gap-1">
+                                 <AlertCircle className="h-3 w-3" /> Yêu cầu sửa hiện tại
+                              </h4>
+                              <p className="text-sm text-amber-900">{selectedItem.approval.rejectionReason}</p>
+                           </div>
+                           {/* Actions... */}
+                        </div>
+                     </div>
+                  )}
+
+               {(!selectedItem.comments || selectedItem.comments.length === 0) ? (
+                  <div className="text-center py-10 text-gray-400">
+                     <div className="bg-gray-100 rounded-full w-12 h-12 flex items-center justify-center mx-auto mb-3">
+                        <CheckCircle className="h-6 w-6 text-gray-300" />
+                     </div>
+                     <p className="text-sm">Chưa có lịch sử chỉnh sửa nào.</p>
+                  </div>
+               ) : (
+                  selectedItem.comments.map((comment: Comment) => (
+                     <div key={comment.id} className={`flex gap-3 ${comment.type === 'response' ? 'flex-row-reverse' : ''}`}>
+                        <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 text-xs font-bold text-white shadow-sm
+                           ${comment.type === 'request' ? 'bg-amber-500' : 'bg-blue-500'}
+                        `}>
+                           {comment.userName.charAt(0)}
+                        </div>
+                        <div className={`flex-1 max-w-[85%] space-y-1`}>
+                           <div className={`p-3 rounded-2xl shadow-sm text-sm relative group
+                              ${comment.type === 'request' ? 'bg-amber-50 border border-amber-100 text-gray-800 rounded-tl-none' :
+                                 comment.type === 'response' ? 'bg-blue-50 border border-blue-100 text-gray-800 rounded-tr-none' :
+                                    'bg-white border border-gray-200 text-gray-600'}
+                           `}>
+                              <p>{comment.content}</p>
+                           </div>
+                           <div className={`text-[10px] text-gray-400 flex items-center gap-1 ${comment.type === 'response' ? 'justify-end' : ''}`}>
+                              <span>{new Date(comment.timestamp || (comment as any).createdAt).toLocaleString('vi-VN')}</span>
+                           </div>
+                        </div>
+                     </div>
+                  ))
+               )}
+            </div>
+         </div>
+      );
+   };
+
    return (
       <div className="min-h-screen bg-gray-50 font-sans">
 
          {/* --- 1. HEADER KHU VỰC --- */}
          <div className="bg-white border-b border-orange-100 sticky top-0 z-30 shadow-sm">
-            <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-               {/* Breadcrumb */}
-               <div className="flex items-center gap-2 text-xs text-gray-500 mb-3">
-                  <span className="cursor-pointer hover:text-orange-600" onClick={() => navigate('/')}>Dashboard</span>
-                  <ChevronRight className="h-3 w-3" />
-                  <span className="cursor-pointer hover:text-orange-600">Tổ Chuyên Môn</span>
-                  <ChevronRight className="h-3 w-3" />
-                  <span className="font-semibold text-orange-700">Kế hoạch Tổ</span>
-               </div>
+            <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-3 md:py-4">
+               {/* Breadcrumb - Hide on Mobile */}
+               {!isMobile && (
+                  <div className="flex items-center gap-2 text-xs text-gray-500 mb-3">
+                     <span className="cursor-pointer hover:text-orange-600" onClick={() => navigate('/')}>Dashboard</span>
+                     <ChevronRight className="h-3 w-3" />
+                     <span className="cursor-pointer hover:text-orange-600">Tổ Chuyên Môn</span>
+                     <ChevronRight className="h-3 w-3" />
+                     <span className="font-semibold text-orange-700">Kế hoạch Tổ</span>
+                  </div>
+               )}
 
-               <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+               <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 md:gap-4">
                   <div>
                      <h1
-                        className="text-2xl font-bold text-gray-900 flex items-center gap-3 cursor-pointer hover:opacity-80 transition-opacity"
+                        className={`${isMobile ? 'text-lg' : 'text-2xl'} font-bold text-gray-900 flex items-center gap-2 md:gap-3 cursor-pointer hover:opacity-80 transition-opacity`}
                         onClick={() => navigate('/')}
                      >
-                        <span className="p-2 bg-orange-100 rounded-lg text-orange-600">
-                           <FileText className="h-6 w-6" />
-                        </span>
-                        Hồ sơ Tổ Chuyên Môn
+                        {isMobile ? (
+                           <button onClick={(e) => { e.stopPropagation(); navigate('/'); }} className="mr-1">
+                              <ChevronRight className="h-5 w-5 rotate-180 text-gray-500" />
+                           </button>
+                        ) : (
+                           <span className="p-2 bg-orange-100 rounded-lg text-orange-600">
+                              <FileText className="h-6 w-6" />
+                           </span>
+                        )}
+                        <span>Hồ sơ Tổ Chuyên Môn</span>
                      </h1>
-                     <p className="text-sm text-gray-500 mt-1 ml-12">
-                        Quản lý kế hoạch hoạt động và lưu trữ biên bản họp định kỳ.
-                     </p>
+                     {!isMobile && (
+                        <p className="text-sm text-gray-500 mt-1 ml-12">
+                           Quản lý kế hoạch hoạt động và lưu trữ biên bản họp định kỳ.
+                        </p>
+                     )}
                   </div>
 
                   {canUpload && (
                      <button
                         onClick={handleOpenUpload}
-                        className="flex items-center gap-2 bg-orange-600 hover:bg-orange-700 text-white px-5 py-2.5 rounded-lg shadow-md transition-all font-medium"
+                        className={`flex items-center justify-center gap-2 bg-orange-600 hover:bg-orange-700 text-white rounded-lg shadow-md transition-all font-medium ${isMobile ? 'w-full py-2 text-sm' : 'px-5 py-2.5'}`}
                      >
                         <Upload className="h-4 w-4" />
-                        <span>Tải lên Biên bản/Kế hoạch</span>
+                        <span>{isMobile ? 'Tải lên mới' : 'Tải lên Biên bản/Kế hoạch'}</span>
                      </button>
                   )}
                </div>
@@ -895,12 +1009,12 @@ const ProfessionalGroupPlans: React.FC = () => {
          </div>
 
          {/* --- 2. CONTENT AREA (Single Column) --- */}
-         <main className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-10 pb-20">
+         <main className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-4 md:py-8 space-y-6 md:space-y-10 pb-24 md:pb-20">
 
             {/* --- KHỐI 1: KẾ HOẠCH HOẠT ĐỘNG --- */}
             <section>
-               <div className="flex items-center justify-between mb-4">
-                  <h2 className="text-lg font-bold text-gray-800 uppercase tracking-tight border-l-4 border-orange-500 pl-3">
+               <div className="flex items-center justify-between mb-3 md:mb-4">
+                  <h2 className="text-base md:text-lg font-bold text-gray-800 uppercase tracking-tight border-l-4 border-orange-500 pl-3">
                      Kế hoạch Hoạt động
                   </h2>
                   <button className="text-xs font-medium text-gray-500 hover:text-orange-600 flex items-center gap-1">
@@ -908,249 +1022,186 @@ const ProfessionalGroupPlans: React.FC = () => {
                   </button>
                </div>
 
-               <div className="grid gap-4">
-                  {plans.map((plan) => (
+               <div className={`grid gap-3 md:gap-4 ${isMobile ? 'grid-cols-1' : 'grid-cols-1'}`}>
+                  {plans.map((plan: GroupPlan) => (
                      <div
                         key={plan.id}
                         id={`file-${plan.id}`} // Check ID for scroll
                         onClick={() => handleItemClick(plan)}
-                        className={`bg-white rounded-xl p-5 border shadow-sm hover:shadow-md transition-all cursor-pointer group
+                        className={`bg-white rounded-xl p-4 md:p-5 border shadow-sm hover:shadow-md transition-all cursor-pointer group
                            ${highlightFileId === plan.id ? 'ring-2 ring-orange-500 bg-orange-50 animate-pulse' : 'border-gray-100 hover:border-orange-200'}
                         `}
                      >
-                        <div className="flex items-start justify-between">
-                           <div className="flex items-center gap-4">
-                              <div className="h-12 w-12 bg-blue-50 rounded-lg flex items-center justify-center text-blue-600 group-hover:bg-blue-100 transition-colors">
-                                 <FileText className="h-6 w-6" />
+                        <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-3 md:gap-4">
+                           <div className="flex items-start gap-3 md:gap-4">
+                              <div className="flex-shrink-0 h-10 w-10 md:h-12 md:w-12 bg-blue-50 rounded-lg flex items-center justify-center text-blue-600 group-hover:bg-blue-100 transition-colors">
+                                 <FileText className="h-5 w-5 md:h-6 md:w-6" />
                               </div>
-                              <div>
-                                 <div className="flex items-center gap-2">
-                                    <h3 className="text-base font-bold text-gray-900 group-hover:text-orange-700 transition-colors">
+                              <div className="flex-1 min-w-0">
+                                 <div className="flex flex-col md:flex-row md:items-center gap-1 md:gap-2 mb-1">
+                                    <h3 className="text-sm md:text-base font-bold text-gray-900 group-hover:text-orange-700 transition-colors leading-tight line-clamp-2">
                                        {plan.title}
                                     </h3>
-                                    {/* Approval Status Badge */}
-                                    {plan.approval?.status === 'pending' && (
-                                       <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-700 uppercase">
-                                          <Clock className="h-3 w-3" /> Chờ duyệt
-                                       </span>
-                                    )}
-                                    {plan.approval?.status === 'approved' && (
-                                       <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-green-100 text-green-700 uppercase">
-                                          <CheckCircle2 className="h-3 w-3" /> Đã duyệt
-                                       </span>
-                                    )}
-                                    {(plan.approval?.status === 'rejected' || plan.approval?.status === 'needs_revision') && (
-                                       <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-orange-100 text-orange-700 uppercase" title={plan.approval.rejectionReason}>
-                                          <Edit3 className="h-3 w-3" /> Cần sửa
-                                       </span>
-                                    )}
+                                    <div className="flex flex-wrap gap-1">
+                                       {/* Approval Status Badge */}
+                                       {plan.approval?.status === 'pending' && (
+                                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-700 uppercase whitespace-nowrap">
+                                             <Clock className="h-3 w-3" /> Chờ duyệt
+                                          </span>
+                                       )}
+                                       {plan.approval?.status === 'approved' && (
+                                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-green-100 text-green-700 uppercase whitespace-nowrap">
+                                             <CheckCircle2 className="h-3 w-3" /> Đã duyệt
+                                          </span>
+                                       )}
+                                       {(plan.approval?.status === 'rejected' || plan.approval?.status === 'needs_revision') && (
+                                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-orange-100 text-orange-700 uppercase whitespace-nowrap" title={plan.approval.rejectionReason}>
+                                             <Edit3 className="h-3 w-3" /> Cần sửa
+                                          </span>
+                                       )}
+                                    </div>
                                  </div>
-                                 <div className="flex items-center gap-3 mt-1 text-xs text-gray-500">
-                                    <span className="flex items-center gap-1">
+                                 <div className="flex items-center gap-2 md:gap-3 mt-1 text-[10px] md:text-xs text-gray-500">
+                                    <span className="flex items-center gap-1 truncate max-w-[100px] md:max-w-none">
                                        <Users className="h-3 w-3" /> {plan.uploader}
                                     </span>
-                                    <span className="w-1 h-1 bg-gray-300 rounded-full"></span>
-                                    <span className="flex items-center gap-1">
+                                    <span className="w-1 h-1 bg-gray-300 rounded-full flex-shrink-0"></span>
+                                    <span className="flex items-center gap-1 flex-shrink-0">
                                        <Clock className="h-3 w-3" /> {new Date(plan.uploadDate).toLocaleDateString('vi-VN')}
                                     </span>
                                  </div>
-                                 {/* Show revision reason - MOVED TO MODAL */}
                               </div>
                            </div>
 
                            {/* Interaction Column */}
-                           <div className="flex items-center gap-4">
-                              {/* Approval Buttons - Only show for users who can approve and item is pending */}
+                           <div className="flex items-center gap-3 md:gap-4 justify-between md:justify-end w-full md:w-auto mt-1 md:mt-0 border-t md:border-t-0 border-gray-100 md:border-transparent pt-3 md:pt-0">
+                              {/* Approval Buttons */}
                               {canApprove(plan) && plan.approval?.status === 'pending' && (
                                  <div className="flex items-center gap-1">
                                     <button
-                                       onClick={(e) => { e.stopPropagation(); handleApprove(plan); }}
-                                       className="px-3 py-1.5 text-xs font-bold text-white bg-green-500 hover:bg-green-600 rounded-lg transition-colors shadow-sm flex items-center gap-1"
+                                       onClick={(e: React.MouseEvent) => { e.stopPropagation(); handleApprove(plan); }}
+                                       className="px-2 md:px-3 py-1.5 text-xs font-bold text-white bg-green-500 hover:bg-green-600 rounded-lg transition-colors shadow-sm flex items-center gap-1"
                                     >
-                                       <CheckCircle2 className="h-3.5 w-3.5" /> Duyệt
+                                       <CheckCircle2 className="h-3.5 w-3.5" /> <span className="hidden sm:inline">Duyệt</span>
                                     </button>
                                     <button
-                                       onClick={(e) => { e.stopPropagation(); openRejectModal(plan); }}
-                                       className="px-3 py-1.5 text-xs font-bold text-white bg-amber-500 hover:bg-amber-600 rounded-lg transition-colors shadow-sm flex items-center gap-1"
+                                       onClick={(e: React.MouseEvent) => { e.stopPropagation(); openRejectModal(plan); }}
+                                       className="px-2 md:px-3 py-1.5 text-xs font-bold text-white bg-amber-500 hover:bg-amber-600 rounded-lg transition-colors shadow-sm flex items-center gap-1"
                                     >
-                                       <Edit3 className="h-3.5 w-3.5" /> Yêu cầu sửa
+                                       <Edit3 className="h-3.5 w-3.5" /> <span className="hidden sm:inline">Sửa</span>
                                     </button>
                                  </div>
                               )}
-                              <div className="flex -space-x-2">
-                                 {plan.viewers.map((v, idx) => (
-                                    <div key={idx} className="h-8 w-8 rounded-full bg-gray-200 border-2 border-white flex items-center justify-center text-xs font-medium text-gray-600">
-                                       {v}
-                                    </div>
-                                 ))}
-                                 {plan.viewers.length > 0 && (
-                                    <div className="h-8 w-8 rounded-full bg-gray-50 border-2 border-white flex items-center justify-center text-[10px] text-gray-400">
-                                       +
-                                    </div>
-                                 )}
-                              </div>
-                              <div className="flex items-center gap-2">
-                                 <div className="flex items-center gap-1 text-gray-400 bg-gray-50 px-2 py-1 rounded-md">
-                                    <MessageSquare className="h-4 w-4" />
-                                    <span className="text-xs font-medium">{plan.commentCount}</span>
+
+                              <div className="flex items-center gap-3 ml-auto md:ml-0">
+                                 <div className="flex -space-x-2">
+                                    {plan.viewers.map((v: string, idx: number) => (
+                                       <div key={idx} className="h-6 w-6 md:h-8 md:w-8 rounded-full bg-gray-200 border-2 border-white flex items-center justify-center text-[10px] md:text-xs font-medium text-gray-600">
+                                          {v}
+                                       </div>
+                                    ))}
+                                    {plan.viewers.length > 0 && (
+                                       <div className="h-6 w-6 md:h-8 md:w-8 rounded-full bg-gray-50 border-2 border-white flex items-center justify-center text-[8px] md:text-[10px] text-gray-400">
+                                          +
+                                       </div>
+                                    )}
                                  </div>
-                                 {/* Delete button removed from list view */}
+                                 <div className="flex items-center gap-2">
+                                    <div className="flex items-center gap-1 text-gray-400 bg-gray-50 px-2 py-1 rounded-md">
+                                       <MessageSquare className="h-3 w-3 md:h-4 md:w-4" />
+                                       <span className="text-xs font-medium">{plan.commentCount}</span>
+                                    </div>
+                                 </div>
                               </div>
                            </div>
                         </div>
                      </div>
                   ))}
                   {plans.length === 0 && (
-                     <div className="text-center py-8 bg-white rounded-xl border border-dashed border-gray-200 text-gray-400">
-                        <FileText className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                        Chưa có kế hoạch nào.
+                     <div className="text-center py-8 md:py-12 bg-white rounded-xl border border-dashed border-gray-300">
+                        <FileText className="h-10 w-10 md:h-12 md:w-12 text-gray-300 mx-auto mb-3" />
+                        <p className="text-sm text-gray-500">Chưa có kế hoạch nào được tải lên.</p>
                      </div>
                   )}
                </div>
             </section>
 
-            {/* --- KHỐI 2: BIÊN BẢN HỌP TỔ (TIMELINE) --- */}
+            {/* divider */}
+            <div className="border-t border-gray-200"></div>
+
+            {/* --- KHỐI 2: BIÊN BẢN HỌP TỔ --- */}
             <section>
-               <div className="flex items-center justify-between mb-6">
-                  <h2 className="text-lg font-bold text-gray-800 uppercase tracking-tight border-l-4 border-orange-500 pl-3">
-                     Biên bản Họp Tổ
+               <div className="flex items-center justify-between mb-3 md:mb-4">
+                  <h2 className="text-base md:text-lg font-bold text-gray-800 uppercase tracking-tight border-l-4 border-orange-500 pl-3">
+                     Biên bản Họp tổ
                   </h2>
-                  <div className="flex gap-2">
-                     <button className="p-1.5 bg-white border border-gray-200 rounded-md text-gray-500 hover:text-orange-600 shadow-sm">
-                        <Filter className="h-4 w-4" />
-                     </button>
-                  </div>
+                  <button className="p-1 text-gray-400 hover:text-orange-600 rounded-lg hover:bg-orange-50">
+                     <Filter className="h-4 w-4" />
+                  </button>
                </div>
 
-               <div className="relative border-l-2 border-gray-200 ml-3 md:ml-6 space-y-8 pb-4">
-                  {minutes.map((minute) => (
-                     <div key={minute.id} className="relative pl-8 md:pl-10">
-                        {/* Timeline Dot */}
-                        <div className="absolute -left-[9px] top-0 h-5 w-5 rounded-full bg-white border-4 border-orange-200"></div>
+               <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+                  <div className="relative pl-4 md:pl-8 py-4 md:py-8 space-y-6 md:space-y-8 before:absolute before:inset-y-0 before:left-4 md:before:left-8 before:w-0.5 before:bg-gray-200">
+                     {minutes.map((minute: MeetingMinute) => (
+                        <div key={minute.id} className="relative pl-6 md:pl-8 pr-4 md:pr-6">
+                           {/* Timeline Dot */}
+                           <div className={`absolute left-[-5px] md:left-[-6px] top-1 h-3 w-3 md:h-4 md:w-4 rounded-full border-2 md:border-4 border-white ${minute.status === 'finalized' ? 'bg-green-500 ring-2 ring-green-100' : 'bg-orange-400 ring-2 ring-orange-100'
+                              } z-10`}></div>
 
-                        {/* Date Label */}
-                        <div className="absolute -left-2 top-7 md:top-1 md:-left-24 w-20 md:text-right">
-                           <span className="text-xs font-bold text-gray-500">
-                              {new Date(minute.date).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' })}
-                           </span>
-                        </div>
-
-                        {/* Content Card */}
-                        <div
-                           id={`file-${minute.id}`} // Check ID for scroll
-                           onClick={() => handleItemClick(minute)}
-                           className={`bg-white rounded-lg border p-4 hover:shadow-md transition-all cursor-pointer group relative pr-10
-                              ${highlightFileId === minute.id ? 'ring-2 ring-orange-500 bg-orange-50 animate-pulse' : 'border-gray-200 hover:border-orange-300'}
-                           `}
-                        >
-                           <div className="flex justify-between items-start mb-2">
-                              <div className="flex items-center gap-2 flex-wrap">
-                                 {minute.status === 'finalized' ? (
-                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-green-100 text-green-700 uppercase">
-                                       <CheckCircle2 className="h-3 w-3" /> Đã chốt
-                                    </span>
-                                 ) : (
-                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-700 uppercase animate-pulse">
-                                       <AlertCircle className="h-3 w-3" /> Đang thảo luận
+                           <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-1 md:gap-4 mb-2">
+                              <span className="text-xs font-bold text-gray-500 font-mono">{minute.date}</span>
+                              {/* Status Badges for List Item */}
+                              <div className="flex items-center gap-2">
+                                 {minute.status === 'draft' && (
+                                    <span className="px-2 py-0.5 text-[10px] font-bold bg-orange-100 text-orange-700 rounded-full uppercase border border-orange-200">
+                                       <Clock className="h-2.5 w-2.5 inline mr-1" /> Đang thảo luận
                                     </span>
                                  )}
-                                 {/* Approval Status Badge */}
+                                 {/* Approval statuses */}
                                  {minute.approval?.status === 'pending' && (
-                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-600 border border-amber-200">
-                                       <Clock className="h-3 w-3" /> Chờ duyệt
+                                    <span className="px-2 py-0.5 text-[10px] font-bold bg-amber-100 text-amber-700 rounded-full uppercase border border-amber-200">
+                                       <Clock className="h-2.5 w-2.5 inline mr-1" /> Chờ duyệt
                                     </span>
                                  )}
                                  {minute.approval?.status === 'approved' && (
-                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-green-50 text-green-600 border border-green-200">
-                                       <CheckCircle2 className="h-3 w-3" /> Đã duyệt
+                                    <span className="px-2 py-0.5 text-[10px] font-bold bg-green-100 text-green-700 rounded-full uppercase border border-green-200">
+                                       <CheckCircle2 className="h-2.5 w-2.5 inline mr-1" /> Duyệt
                                     </span>
                                  )}
                                  {(minute.approval?.status === 'rejected' || minute.approval?.status === 'needs_revision') && (
-                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-orange-50 text-orange-600 border border-orange-200" title={minute.approval.rejectionReason}>
-                                       <Edit3 className="h-3 w-3" /> Cần sửa
+                                    <span className="px-2 py-0.5 text-[10px] font-bold bg-orange-100 text-orange-700 rounded-full uppercase border border-orange-200">
+                                       <Edit3 className="h-2.5 w-2.5 inline mr-1" /> Yêu cầu sửa
                                     </span>
                                  )}
                               </div>
-                              {/* Approval Buttons for Minutes */}
-                              {canApprove(minute) && minute.approval?.status === 'pending' && (
-                                 <div className="flex items-center gap-1">
-                                    <button
-                                       onClick={(e) => { e.stopPropagation(); handleApprove(minute); }}
-                                       className="px-2 py-1 text-[10px] font-bold text-white bg-green-500 hover:bg-green-600 rounded transition-colors flex items-center gap-0.5"
-                                    >
-                                       <CheckCircle2 className="h-3 w-3" /> Duyệt
-                                    </button>
-                                    <button
-                                       onClick={(e) => { e.stopPropagation(); openRejectModal(minute); }}
-                                       className="px-2 py-1 text-[10px] font-bold text-white bg-amber-500 hover:bg-amber-600 rounded transition-colors flex items-center gap-0.5"
-                                    >
-                                       <Edit3 className="h-3 w-3" /> Yêu cầu sửa
-                                    </button>
+                           </div>
+
+                           <div
+                              onClick={() => handleItemClick(minute)}
+                              className={`group p-3 md:p-4 rounded-xl border-2 transition-all cursor-pointer bg-gray-50 hover:bg-white hover:shadow-md
+                                 ${highlightFileId === minute.id ? 'border-orange-500 ring-2 ring-orange-200' : 'border-transparent hover:border-orange-100'}
+                              `}
+                           >
+                              <h3 className="text-sm md:text-base font-bold text-gray-800 mb-2 md:mb-3 group-hover:text-orange-700 transition-colors">
+                                 {minute.title}
+                              </h3>
+
+                              <div className="flex items-center gap-2">
+                                 <div className="flex items-center gap-2 px-3 py-1.5 bg-white border border-gray-200 rounded-lg text-xs md:text-sm text-gray-600 group-hover:border-orange-300 transition-colors flex-1 w-full truncate">
+                                    {minute.fileType === 'word' ? <FileText className="h-4 w-4 text-blue-600 flex-shrink-0" /> : <File className="h-4 w-4 text-red-600 flex-shrink-0" />}
+                                    <span className="truncate flex-1">Xem biên bản chi tiết...</span>
                                  </div>
-                              )}
-                           </div>
-
-                           <h3 className="text-sm font-bold text-gray-900 mb-3 group-hover:text-orange-700">
-                              {minute.title}
-                           </h3>
-
-                           {/* Show rejection reason if rejected */}
-                           {(minute.approval?.status === 'rejected' || minute.approval?.status === 'needs_revision') && minute.approval.rejectionReason && (
-                              <div className="mb-3 text-xs text-orange-600 bg-orange-50 px-2 py-1 rounded border border-orange-100">
-                                 <span className="font-semibold">Yêu cầu sửa:</span> {minute.approval.rejectionReason}
                               </div>
-                           )}
-
-                           <div className="flex items-center justify-between">
-                              <div className="flex items-center gap-2 p-2 bg-gray-50 rounded border border-gray-100 group-hover:bg-orange-50 group-hover:border-orange-100 transition-colors">
-                                 {minute.fileType === 'word' ? (
-                                    <FileText className="h-4 w-4 text-blue-600" />
-                                 ) : (
-                                    <File className="h-4 w-4 text-red-500" />
-                                 )}
-                                 <span className="text-xs text-gray-600 font-medium truncate max-w-[150px]">
-                                    Bien_ban_hop_{minute.date}.{minute.fileType === 'word' ? 'docx' : 'pdf'}
-                                 </span>
-                              </div>
-
-                              {/* View Details Link */}
-                              <span className="text-xs font-bold text-orange-600 opacity-0 group-hover:opacity-100 transition-opacity flex items-center">
-                                 Chi tiết <ChevronRight className="h-3 w-3" />
-                              </span>
-                           </div>
-
-                           {/* Timeline Item Actions (Absolute positioned) */}
-                           <div className="absolute top-2 right-2 flex gap-1 z-10">
-                              {/* Finalize Button - Only Author & Not Finalized */}
-                              {canDelete(minute) && minute.status !== 'finalized' && (
-                                 <button
-                                    onClick={(e) => { e.stopPropagation(); handleFinalizeMinute(minute); }}
-                                    className="p-1.5 text-gray-400 hover:text-green-600 hover:bg-green-50 rounded-full transition-colors"
-                                    title="Chốt biên bản"
-                                 >
-                                    <Lock className="h-4 w-4" />
-                                 </button>
-                              )}
-
-                              {/* Delete Button - Only Author */}
-                              {canDelete(minute) && (
-                                 <button
-                                    onClick={(e) => openDeleteModal(minute, e)}
-                                    className="p-1.5 text-gray-300 hover:text-red-600 hover:bg-red-50 rounded-full transition-colors"
-                                    title="Xóa tài liệu"
-                                 >
-                                    <Trash2 className="h-4 w-4" />
-                                 </button>
-                              )}
                            </div>
                         </div>
-                     </div>
-                  ))}
-                  {minutes.length === 0 && (
-                     <div className="pl-10 text-sm text-gray-400 italic">Chưa có biên bản họp nào.</div>
-                  )}
+                     ))}
+                     {minutes.length === 0 && (
+                        <div className="pl-6 md:pl-8 text-sm text-gray-400 italic">Chưa có biên bản họp nào.</div>
+                     )}
+                  </div>
                </div>
             </section>
+
          </main>
 
          {/* Delete Confirmation Modal */}
@@ -1206,7 +1257,7 @@ const ProfessionalGroupPlans: React.FC = () => {
                            rows={4}
                            placeholder="Nhập chi tiết các điểm cần sửa..."
                            value={rejectionReason}
-                           onChange={(e) => setRejectionReason(e.target.value)}
+                           onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setRejectionReason(e.target.value)}
                         />
                      </div>
 
@@ -1240,277 +1291,152 @@ const ProfessionalGroupPlans: React.FC = () => {
                      onClick={() => setIsDrawerOpen(false)}
                   ></div>
 
-                  <div className="relative w-full max-w-6xl bg-white h-full shadow-2xl flex flex-col animate-in slide-in-from-right duration-300">
+                  <div className={`relative w-full ${isMobile ? 'h-full' : 'max-w-6xl h-full'} bg-white shadow-2xl flex flex-col animate-in slide-in-from-right duration-300`}>
 
                      {/* Drawer Header */}
-                     <div className="px-6 py-4 border-b border-orange-100 flex justify-between items-start bg-orange-50/30 flex-shrink-0">
-                        <div>
-                           <span className="text-[10px] font-bold text-orange-600 uppercase tracking-wider mb-1 block">
+                     <div className={`px-4 py-3 border-b border-orange-100 flex items-center gap-3 bg-orange-50/30 flex-shrink-0 safe-area-inset-top ${isMobile ? 'justify-start' : 'justify-between'}`}>
+                        {isMobile && (
+                           <button
+                              onClick={() => setIsDrawerOpen(false)}
+                              className="p-2 -ml-2 text-gray-600 hover:bg-gray-100 rounded-full"
+                           >
+                              <ChevronRight className="h-5 w-5 rotate-180" />
+                           </button>
+                        )}
+
+                        <div className="flex-1 min-w-0 mr-2">
+                           <span className="text-[10px] font-bold text-orange-600 uppercase tracking-wider mb-0.5 block">
                               {selectedItem.type === 'plan' ? 'Kế hoạch' : 'Biên bản họp'}
                            </span>
-                           <h2 className="text-lg font-bold text-gray-900 leading-tight">{selectedItem.title}</h2>
+                           <h2 className={`font-bold text-gray-900 leading-tight truncate ${isMobile ? 'text-sm' : 'text-lg'}`}>{selectedItem.title}</h2>
                         </div>
-                        <div className="flex items-center gap-2">
 
-                           {/* Edit Button - Only show for Word files and file owner */}
-                           {selectedItem && isWordFile(selectedItem) && canEdit(selectedItem) && (
-                              <button
-                                 onClick={(e) => handleOpenWordEditor(selectedItem, e)}
-                                 className="p-2 text-gray-500 hover:text-orange-600 hover:bg-orange-50 rounded-lg transition-colors flex items-center gap-1"
-                                 title="Chỉnh sửa file Word"
-                              >
-                                 <Edit3 className="h-5 w-5" />
-                                 <span className="text-xs font-medium hidden md:inline">Chỉnh sửa</span>
-                              </button>
+                        <div className="flex items-center gap-1">
+                           {!isMobile && (
+                              /* Desktop Actions in Header */
+                              <>
+                                 {selectedItem && isWordFile(selectedItem) && canEdit(selectedItem) && (
+                                    <button
+                                       onClick={(e: React.MouseEvent) => handleOpenWordEditor(selectedItem, e)}
+                                       className="p-2 text-gray-500 hover:text-orange-600 hover:bg-orange-50 rounded-lg transition-colors flex items-center gap-1"
+                                       title="Chỉnh sửa file Word"
+                                    >
+                                       <Edit3 className="h-5 w-5" />
+                                       <span className="text-xs font-medium hidden lg:inline">Sửa</span>
+                                    </button>
+                                 )}
+                                 <button className="p-2 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors" title="Tải xuống">
+                                    <Download className="h-5 w-5" />
+                                 </button>
+                                 {canDelete(selectedItem) && (
+                                    <button
+                                       onClick={(e: React.MouseEvent) => openDeleteModal(selectedItem, e)}
+                                       className="p-2 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                                       title="Xóa tài liệu"
+                                    >
+                                       <Trash2 className="h-5 w-5" />
+                                    </button>
+                                 )}
+                                 <button onClick={() => setIsDrawerOpen(false)} className="p-2 text-gray-400 hover:text-gray-600 rounded-full hover:bg-gray-100">
+                                    <X className="h-6 w-6" />
+                                 </button>
+                              </>
                            )}
-
-                           {/* Finalize Button for Minutes in Drawer */}
-                           {selectedItem.type === 'minute' && canDelete(selectedItem) && (selectedItem as MeetingMinute).status !== 'finalized' && (
-                              <button
-                                 onClick={() => handleFinalizeMinute(selectedItem as MeetingMinute)}
-                                 className="p-2 text-gray-500 hover:text-green-600 hover:bg-green-50 rounded-lg transition-colors flex items-center gap-1"
-                                 title="Chốt biên bản"
-                              >
-                                 <Lock className="h-5 w-5" />
-                                 <span className="text-xs font-medium hidden md:inline">Chốt</span>
-                              </button>
-                           )}
-                           <button className="p-2 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors" title="Tải xuống">
-                              <Download className="h-5 w-5" />
-                           </button>
-
-                           {/* Strict Delete Button - Only Author */}
-                           {canDelete(selectedItem) && (
-                              <button
-                                 onClick={(e) => openDeleteModal(selectedItem, e)}
-                                 className="p-2 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                                 title="Xóa tài liệu"
-                              >
-                                 <Trash2 className="h-5 w-5" />
-                              </button>
-                           )}
-                           <button onClick={() => setIsDrawerOpen(false)} className="p-2 text-gray-400 hover:text-gray-600 rounded-full hover:bg-gray-100">
-                              <X className="h-5 w-5" />
-                           </button>
                         </div>
                      </div>
 
                      {/* Content Body - Split View */}
-                     <div className="flex-1 overflow-hidden flex flex-col md:flex-row">
+                     <div className="flex-1 overflow-hidden flex flex-col md:flex-row relative">
 
-                        {/* Left: Preview Area (Scrollable) */}
+                        {/* Left: Preview Area */}
                         <div className="flex-1 overflow-hidden bg-gray-100 border-b md:border-b-0 md:border-r border-gray-200 relative flex flex-col">
-                           {/* Floating Action for Preview */}
-                           <div className="absolute top-4 right-6 flex gap-2 z-10">
-                              <button
-                                 onClick={() => setIsFullScreenPreviewOpen(true)}
-                                 className="bg-white/80 backdrop-blur p-1.5 rounded-md shadow-sm text-gray-600 hover:text-orange-600 border border-gray-200 hover:scale-110 transition-all"
-                                 title="Phóng to toàn màn hình"
-                              >
-                                 <Maximize2 className="h-4 w-4" />
-                              </button>
-                           </div>
-
-                           {/* Render Dynamic Preview - Full Height */}
+                           {/* Render Dynamic Preview */}
                            <div className="flex-1 w-full h-full">
                               {renderFilePreview(false)}
                            </div>
                         </div>
 
-                        {/* Right Panel: Revision History */}
-                        <div className="w-full md:w-96 bg-gray-50 border-l border-gray-200 flex flex-col h-1/2 md:h-full flex-shrink-0">
-                           {/* Meta Info */}
-                           <div className="p-4 border-b border-gray-100 bg-white">
-                              <div className="flex items-center justify-between mb-2">
-                                 <span className="text-xs text-gray-500">Người đăng</span>
-                                 <span className="text-xs font-bold text-gray-800">{selectedItem.author || 'Không rõ'}</span>
+                        {/* Right Panel: Revision History (Desktop) */}
+                        {!isMobile && (
+                           <div className="w-80 bg-gray-50 border-l border-gray-200 flex flex-col h-full flex-shrink-0">
+                              {renderHistory()}
+                           </div>
+                        )}
+                     </div>
+
+                     {/* Mobile Bottom Action Bar */}
+                     {isMobile && (
+                        <div className="bg-white border-t border-gray-200 p-3 pb-safe flex flex-col gap-2 shadow-[0_-2px_10px_rgba(0,0,0,0.05)] z-20">
+                           {/* Status & Info Toggle */}
+                           <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-2">
+                                 {/* Helper to show status badge */}
+                                 {selectedItem.approval?.status === 'approved' && <span className="text-xs font-bold text-green-600 flex items-center gap-1"><CheckCircle2 className="h-3 w-3" /> Đã duyệt</span>}
+                                 {selectedItem.approval?.status === 'pending' && <span className="text-xs font-bold text-amber-600 flex items-center gap-1"><Clock className="h-3 w-3" /> Chờ duyệt</span>}
+
+                                 <button
+                                    onClick={() => setIsMobileInfoOpen(true)}
+                                    className="flex items-center gap-1 text-xs text-gray-500 hover:text-blue-600 bg-gray-100 px-3 py-1.5 rounded-full"
+                                 >
+                                    <Info className="h-3 w-3" /> Chi tiết & LS
+                                    {selectedItem.commentCount ? <span className="ml-1 bg-red-500 text-white text-[9px] px-1.5 rounded-full">{selectedItem.commentCount}</span> : null}
+                                 </button>
                               </div>
-                              <div className="flex items-center justify-between">
-                                 <span className="text-xs text-gray-500">Ngày tải lên</span>
-                                 <span className="text-xs font-bold text-gray-800">{new Date(selectedItem.uploadDate || selectedItem.createdAt || Date.now()).toLocaleDateString('vi-VN')}</span>
+
+                              <div className="flex gap-1">
+                                 {/* Mobile Tool Actions */}
+                                 <button className="p-2 text-gray-500 bg-gray-50 rounded-lg"><Download className="h-4 w-4" /></button>
+                                 {canDelete(selectedItem) && <button onClick={(e: React.MouseEvent) => openDeleteModal(selectedItem, e)} className="p-2 text-red-500 bg-red-50 rounded-lg"><Trash2 className="h-4 w-4" /></button>}
                               </div>
                            </div>
 
-                           <div className="p-4 bg-white border-b border-gray-100 shadow-sm flex items-center gap-2">
-                              <MessageSquare className="h-5 w-5 text-gray-500" />
-                              <h3 className="font-bold text-gray-800">Lịch sử Yêu cầu & Phản hồi</h3>
-                           </div>
+                           {/* Approval Actions Fixed at Bottom */}
+                           {canApprove(selectedItem) && selectedItem.approval?.status === 'pending' && (
+                              <div className="flex gap-2 mt-1">
+                                 <button
+                                    onClick={() => handleApprove(selectedItem)}
+                                    className="flex-1 px-3 py-2.5 bg-green-600 active:bg-green-700 text-white text-sm font-bold rounded-lg flex items-center justify-center gap-1 shadow-sm"
+                                 >
+                                    <CheckCircle2 className="h-4 w-4" /> Duyệt
+                                 </button>
+                                 <button
+                                    onClick={() => openRejectModal(selectedItem)}
+                                    className="flex-1 px-3 py-2.5 bg-amber-500 active:bg-amber-600 text-white text-sm font-bold rounded-lg flex items-center justify-center gap-1 shadow-sm"
+                                 >
+                                    <Edit3 className="h-4 w-4" /> Yêu cầu sửa
+                                 </button>
+                              </div>
+                           )}
 
-                           {/* List of Revisions */}
-                           <div className="flex-1 overflow-y-auto p-4 space-y-4 font-sans">
+                           {/* Finalize Button for Minutes (Mobile) */}
+                           {selectedItem.type === 'minute' && canDelete(selectedItem) && (selectedItem as MeetingMinute).status !== 'finalized' && (
+                              <button
+                                 onClick={() => handleFinalizeMinute(selectedItem as MeetingMinute)}
+                                 className="w-full mt-1 px-3 py-2.5 bg-blue-600 active:bg-blue-700 text-white text-sm font-bold rounded-lg flex items-center justify-center gap-1 shadow-sm"
+                              >
+                                 <Lock className="h-4 w-4" /> Chốt biên bản
+                              </button>
+                           )}
+                        </div>
+                     )}
 
-                              {/* Show initial alert if needs revision (Hide if matches last history item) */}
-                              {selectedItem.approval?.status === 'needs_revision' &&
-                                 selectedItem.approval?.rejectionReason &&
-                                 // Check if the latest comment is already showing this request
-                                 !(selectedItem.comments?.length &&
-                                    selectedItem.comments[selectedItem.comments.length - 1].type === 'request' &&
-                                    selectedItem.comments[selectedItem.comments.length - 1].content === selectedItem.approval.rejectionReason) && (
-                                    <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-4 group relative">
-                                       <div className="flex justify-between items-start">
-                                          <div>
-                                             <h4 className="text-xs font-bold text-amber-800 uppercase mb-1 flex items-center gap-1">
-                                                <AlertCircle className="h-3 w-3" /> Yêu cầu sửa hiện tại
-                                             </h4>
-                                             <p className="text-sm text-amber-900">{selectedItem.approval.rejectionReason}</p>
-                                          </div>
-
-                                          {/* Helper Actions for Reviewer (Edit/Delete Active Request) */}
-                                          {canApprove(selectedItem) && (
-                                             <div className="flex gap-1 ml-2">
-                                                <button
-                                                   onClick={() => handleEditActiveRevision(selectedItem)}
-                                                   className="p-1 text-amber-700 hover:bg-amber-100 rounded transition-colors"
-                                                   title="Sửa nội dung yêu cầu"
-                                                >
-                                                   <Edit3 className="h-3 w-3" />
-                                                </button>
-                                                <button
-                                                   onClick={() => handleDeleteActiveRevision(selectedItem)}
-                                                   className="p-1 text-amber-700 hover:bg-amber-100 hover:text-red-600 rounded transition-colors"
-                                                   title="Hủy bỏ yêu cầu này"
-                                                >
-                                                   <Trash2 className="h-3 w-3" />
-                                                </button>
-                                             </div>
-                                          )}
-                                       </div>
-                                    </div>
-                                 )}
-
-                              {(!selectedItem.comments || selectedItem.comments.length === 0) ? (
-                                 <div className="text-center py-10 text-gray-400">
-                                    <div className="bg-gray-100 rounded-full w-12 h-12 flex items-center justify-center mx-auto mb-3">
-                                       <CheckCircle className="h-6 w-6 text-gray-300" />
-                                    </div>
-                                    <p className="text-sm">Chưa có lịch sử chỉnh sửa nào.</p>
-                                 </div>
-                              ) : (
-                                 selectedItem.comments.map((comment) => (
-                                    <div key={comment.id} className={`flex gap-3 ${comment.type === 'response' ? 'flex-row-reverse' : ''}`}>
-                                       <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 text-xs font-bold text-white shadow-sm
-                                          ${comment.type === 'request' ? 'bg-amber-500' : 'bg-blue-500'}
-                                       `}>
-                                          {comment.userName.charAt(0)}
-                                       </div>
-                                       <div className={`flex-1 max-w-[85%] space-y-1`}>
-                                          <div className={`p-3 rounded-2xl shadow-sm text-sm relative group
-                                             ${comment.type === 'request' ? 'bg-amber-50 border border-amber-100 text-gray-800 rounded-tl-none' :
-                                                comment.type === 'response' ? 'bg-blue-50 border border-blue-100 text-gray-800 rounded-tr-none' :
-                                                   'bg-white border border-gray-200 text-gray-600'}
-                                          `}>
-                                             <div className="flex justify-between items-start mb-1">
-                                                <span className={`text-xs font-bold ${comment.type === 'request' ? 'text-amber-700' : 'text-blue-700'}`}>
-                                                   {comment.userName}
-                                                   {comment.type === 'request' && <span className="ml-1 text-[10px] bg-amber-200 px-1 rounded text-amber-800">Yêu cầu sửa</span>}
-                                                </span>
-
-                                                {/* Edit/Delete Actions */}
-                                                {(comment.userId === user?.id) && (
-                                                   <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity absolute right-2 top-2 bg-white/50 rounded-lg p-0.5 backdrop-blur-sm">
-                                                      <button
-                                                         onClick={() => startEditingComment(comment)}
-                                                         className="p-1 hover:bg-gray-200 rounded text-gray-500 hover:text-blue-600"
-                                                         title="Sửa"
-                                                      >
-                                                         <Edit3 className="h-3 w-3" />
-                                                      </button>
-                                                      <button
-                                                         onClick={() => handleDeleteComment(comment)}
-                                                         className="p-1 hover:bg-gray-200 rounded text-gray-500 hover:text-red-600"
-                                                         title="Xóa"
-                                                      >
-                                                         <Trash2 className="h-3 w-3" />
-                                                      </button>
-                                                   </div>
-                                                )}
-                                             </div>
-
-                                             {/* Content */}
-                                             {editingCommentId === comment.id ? (
-                                                <div className="mt-2">
-                                                   <textarea
-                                                      className="w-full text-sm border border-gray-300 rounded p-2 focus:ring-2 focus:ring-blue-500 outline-none"
-                                                      value={editingContent}
-                                                      onChange={(e) => setEditingContent(e.target.value)}
-                                                      rows={2}
-                                                   />
-                                                   <div className="flex justify-end gap-2 mt-2">
-                                                      <button
-                                                         onClick={() => setEditingCommentId(null)}
-                                                         className="text-xs px-2 py-1 bg-gray-200 rounded hover:bg-gray-300"
-                                                      >Hủy</button>
-                                                      <button
-                                                         onClick={() => handleEditComment(comment.id, selectedItem)}
-                                                         className="text-xs px-2 py-1 bg-blue-500 text-white rounded hover:bg-blue-600"
-                                                      >Lưu</button>
-                                                   </div>
-                                                </div>
-                                             ) : (
-                                                <p className="whitespace-pre-wrap">{comment.content}</p>
-                                             )}
-
-                                             <p className="text-[10px] text-gray-400 mt-1 text-right">
-                                                {new Date(comment.timestamp).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })} - {new Date(comment.timestamp).toLocaleDateString('vi-VN')}
-                                                {comment.editedAt && <span className="italic ml-1">(đã sửa)</span>}
-                                             </p>
-                                          </div>
-                                       </div>
-                                    </div>
-                                 ))
-                              )}
-                              <div ref={commentsEndRef} />
-                           </div>
-
-                           {/* Input Area (Conditional) */}
-                           <div className="p-4 bg-white border-t border-gray-200">
-                              {selectedItem.approval?.status === 'needs_revision' && canRespond(selectedItem) ? (
-                                 /* 1. Show Response Input for Author if Needs Revision */
-                                 <form onSubmit={handleResponse} className="flex gap-2 relative">
-                                    <input
-                                       type="text"
-                                       value={newComment}
-                                       onChange={(e) => setNewComment(e.target.value)}
-                                       placeholder="Nhập phản hồi/giải trình của bạn..."
-                                       className="flex-1 bg-gray-50 border border-gray-300 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all shadow-sm"
-                                    />
-                                    <button
-                                       type="submit"
-                                       disabled={!newComment.trim()}
-                                       className="bg-blue-600 hover:bg-blue-700 text-white rounded-xl px-4 py-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-sm flex items-center justify-center"
-                                    >
-                                       <Send className="h-5 w-5" />
-                                    </button>
-                                 </form>
-                              ) : selectedItem.approval?.status === 'pending' && canApprove(selectedItem) ? (
-                                 /* 2. Show Actions for Reviewer if Pending */
-                                 <div className="flex gap-2">
-                                    <button
-                                       onClick={() => handleApprove(selectedItem)}
-                                       className="flex-1 bg-green-500 hover:bg-green-600 text-white rounded-xl px-4 py-3 font-bold shadow-sm transition-all flex items-center justify-center gap-2"
-                                    >
-                                       <CheckCircle2 className="h-5 w-5" /> Duyệt ngay
-                                    </button>
-                                    <button
-                                       onClick={() => openRejectModal(selectedItem)}
-                                       className="flex-1 bg-amber-500 hover:bg-amber-600 text-white rounded-xl px-4 py-3 font-bold shadow-sm transition-all flex items-center justify-center gap-2"
-                                    >
-                                       <Edit3 className="h-5 w-5" /> Yêu cầu sửa
-                                    </button>
-                                 </div>
-                              ) : (
-                                 /* 3. Helper or Disabled State */
-                                 <div className="text-center text-xs text-gray-500 bg-gray-50 p-2 rounded-lg border border-dashed border-gray-200">
-                                    {selectedItem.approval?.status === 'approved'
-                                       ? "Hồ sơ đã được duyệt. Không thể chỉnh sửa thêm."
-                                       : !canRespond(selectedItem) && selectedItem.approval?.status === 'needs_revision'
-                                          ? "Đang chờ tác giả phản hồi..."
-                                          : "Hồ sơ đang chờ xử lý."}
-                                 </div>
-                              )}
+                     {/* Mobile Info Sheet (Bottom Sheet) */}
+                     {isMobile && isMobileInfoOpen && (
+                        <div className="fixed inset-0 z-[80] flex items-end justify-center bg-black/50 animate-in fade-in duration-200">
+                           <div className="bg-white w-full max-h-[85vh] rounded-t-2xl flex flex-col animate-in slide-in-from-bottom duration-300">
+                              <div className="flex items-center justify-between p-4 border-b border-gray-100">
+                                 <h3 className="font-bold text-gray-800">Thông tin & Lịch sử</h3>
+                                 <button onClick={() => setIsMobileInfoOpen(false)} className="p-2 hover:bg-gray-100 rounded-full">
+                                    <X className="h-5 w-5" />
+                                 </button>
+                              </div>
+                              <div className="flex-1 overflow-hidden flex flex-col">
+                                 {renderHistory()}
+                              </div>
                            </div>
                         </div>
-                     </div>
+                     )}
+
                   </div>
                </div>
             )
@@ -1573,7 +1499,7 @@ const ProfessionalGroupPlans: React.FC = () => {
                               className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none transition-all"
                               placeholder="VD: Kế hoạch chuyên môn Tháng 11..."
                               value={uploadFormData.name}
-                              onChange={(e) => setUploadFormData({ ...uploadFormData, name: e.target.value })}
+                              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setUploadFormData({ ...uploadFormData, name: e.target.value })}
                            />
                         </div>
 
@@ -1587,7 +1513,7 @@ const ProfessionalGroupPlans: React.FC = () => {
                                  type="date"
                                  className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none transition-all text-sm"
                                  value={uploadFormData.date}
-                                 onChange={(e) => setUploadFormData({ ...uploadFormData, date: e.target.value })}
+                                 onChange={(e: React.ChangeEvent<HTMLInputElement>) => setUploadFormData({ ...uploadFormData, date: e.target.value })}
                               />
                            </div>
                            <div>
@@ -1595,7 +1521,7 @@ const ProfessionalGroupPlans: React.FC = () => {
                               <select
                                  className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none transition-all bg-white text-sm"
                                  value={uploadFormData.status}
-                                 onChange={(e) => setUploadFormData({ ...uploadFormData, status: e.target.value as any })}
+                                 onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setUploadFormData({ ...uploadFormData, status: e.target.value as any })}
                               >
                                  <option value="draft">🟡 Đang thảo luận</option>
                                  <option value="finalized">🟢 Đã chốt / Ban hành</option>
@@ -1608,7 +1534,7 @@ const ProfessionalGroupPlans: React.FC = () => {
                            <label className="block text-sm font-medium text-gray-700 mb-1">Tệp đính kèm</label>
                            <div
                               onDrop={handleFileDrop}
-                              onDragOver={(e) => e.preventDefault()}
+                              onDragOver={(e: React.DragEvent<HTMLDivElement>) => e.preventDefault()}
                               className={`border-2 border-dashed rounded-xl p-8 flex flex-col items-center justify-center cursor-pointer transition-all group relative ${uploadFile ? 'border-orange-500 bg-orange-50' : 'border-gray-300 hover:bg-gray-50 hover:border-orange-400'}`}
                            >
                               <input
@@ -1676,8 +1602,7 @@ const ProfessionalGroupPlans: React.FC = () => {
                      date: (selectedItem as any).uploadDate,
                      comments: selectedItem.comments || [],
                      commentCount: selectedItem.commentCount || 0,
-                     approval: selectedItem.approval,
-                     status: selectedItem.approval?.status || 'pending'
+                     approval: selectedItem.approval as any
                   }}
                   onClose={() => {
                      setIsFileViewerOpen(false);
@@ -1751,7 +1676,7 @@ const ProfessionalGroupPlans: React.FC = () => {
                               newRejectionReason = undefined;
                               updateData['approval.status'] = 'pending';
                               updateData['approval.rejectionReason'] = deleteField();
-                              addToast("Đã hoàn tác", "Yêu cầu sửa đã bị xóa. Trạng thái hồ sơ trở về 'Chờ duyệt'.", "info");
+                              addToast("Đã hoàn tác", "Yêu cầu sửa đã bị xóa. Trạng thái hồ sơ trở về 'Chờ duyệt'.", "success");
                            }
                         }
 
@@ -1761,7 +1686,7 @@ const ProfessionalGroupPlans: React.FC = () => {
                            if (hasActiveRequest && newApprovalStatus === 'pending') {
                               newApprovalStatus = 'needs_revision';
                               updateData['approval.status'] = 'needs_revision';
-                              addToast("Đã hoàn tác", "Phản hồi đã bị xóa. Bạn có thể phản hồi lại.", "info");
+                              addToast("Đã hoàn tác", "Phản hồi đã bị xóa. Bạn có thể phản hồi lại.", "success");
                            }
                         }
 

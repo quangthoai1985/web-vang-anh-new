@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import useMobile from '../hooks/useMobile';
 import { useNavigate } from 'react-router-dom';
 import {
    ChevronRight,
@@ -55,6 +56,7 @@ const BoardingMenu: React.FC = () => {
    const navigate = useNavigate();
    const { user } = useAuth();
    const { addToast } = useNotification();
+   const isMobile = useMobile();
 
    // State
    const [documents, setDocuments] = useState<OfficeDocument[]>([]);
@@ -349,40 +351,44 @@ const BoardingMenu: React.FC = () => {
       <div className="flex flex-col h-screen bg-gray-50 overflow-hidden font-sans">
 
          {/* --- Header --- */}
-         <div className="bg-white border-b border-emerald-100 px-6 py-4 flex-shrink-0 z-20 shadow-sm">
+         <div className={`bg-white border-b border-emerald-100 ${isMobile ? 'px-4 py-3' : 'px-6 py-4'} flex-shrink-0 z-20 shadow-sm`}>
             <div className="max-w-7xl mx-auto w-full">
-               {/* Breadcrumb */}
-               <div className="flex items-center gap-2 text-xs text-gray-500 mb-2">
-                  <span className="cursor-pointer hover:text-emerald-600" onClick={() => navigate('/')}>Dashboard</span>
-                  <ChevronRight className="h-3 w-3" />
-                  <span>Tổ Văn phòng</span>
-                  <ChevronRight className="h-3 w-3" />
-                  <span className="font-semibold text-emerald-700">Bán trú</span>
-               </div>
+               {/* Breadcrumb - hide on mobile */}
+               {!isMobile && (
+                  <div className="flex items-center gap-2 text-xs text-gray-500 mb-2">
+                     <span className="cursor-pointer hover:text-emerald-600" onClick={() => navigate('/')}>Dashboard</span>
+                     <ChevronRight className="h-3 w-3" />
+                     <span>Tổ Văn phòng</span>
+                     <ChevronRight className="h-3 w-3" />
+                     <span className="font-semibold text-emerald-700">Bán trú</span>
+                  </div>
+               )}
 
                {/* Main Header Content */}
-               <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+               <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
                   <div>
                      <h1
-                        className="text-2xl font-bold text-gray-900 flex items-center gap-3 cursor-pointer hover:opacity-80 transition-opacity"
+                        className={`${isMobile ? 'text-lg' : 'text-2xl'} font-bold text-gray-900 flex items-center gap-2 cursor-pointer hover:opacity-80 transition-opacity`}
                         onClick={() => navigate('/')}
                      >
-                        <span className="p-2 bg-emerald-100 rounded-lg text-emerald-700">
-                           <Utensils className="h-6 w-6" />
+                        <span className={`${isMobile ? 'p-1.5' : 'p-2'} bg-emerald-100 rounded-lg text-emerald-700`}>
+                           <Utensils className={`${isMobile ? 'h-5 w-5' : 'h-6 w-6'}`} />
                         </span>
                         Quản lý Bán trú & Dinh dưỡng
                      </h1>
-                     <p className="text-xs text-gray-500 mt-1 ml-12 flex items-center gap-1">
-                        <Lock className="h-3 w-3" /> Chỉ dành cho BGH, Y tế & Kế toán
-                     </p>
+                     {!isMobile && (
+                        <p className="text-xs text-gray-500 mt-1 ml-12 flex items-center gap-1">
+                           <Lock className="h-3 w-3" /> Chỉ dành cho BGH, Y tế & Kế toán
+                        </p>
+                     )}
                   </div>
 
                   <button
                      onClick={handleOpenUpload}
-                     className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2.5 rounded-lg shadow-md hover:shadow-lg transition-all font-medium transform hover:-translate-y-0.5"
+                     className={`flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white ${isMobile ? 'px-3 py-2 text-sm' : 'px-5 py-2.5'} rounded-lg shadow-md hover:shadow-lg transition-all font-medium transform hover:-translate-y-0.5`}
                   >
                      <Upload className="h-4 w-4" />
-                     <span>Tải lên hồ sơ mới</span>
+                     <span>{isMobile ? 'Tải lên hồ sơ mới' : 'Tải lên hồ sơ mới'}</span>
                   </button>
                </div>
             </div>
@@ -391,7 +397,7 @@ const BoardingMenu: React.FC = () => {
          {/* --- Main Layout --- */}
          <div className="flex flex-1 overflow-hidden max-w-7xl mx-auto w-full">
 
-            {/* Sidebar (Filters) */}
+            {/* Sidebar (Filters) - Desktop only */}
             <div className="w-64 bg-white border-r border-gray-200 flex-shrink-0 overflow-y-auto hidden md:block">
                <div className="p-6">
                   <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-4">Nghiệp vụ Bán trú</h3>
@@ -423,12 +429,34 @@ const BoardingMenu: React.FC = () => {
                </div>
             </div>
 
-            {/* Main Content (Grid) */}
-            <div className="flex-1 bg-gray-50 overflow-y-auto p-6">
+            {/* Main Content */}
+            <div className={`flex-1 bg-gray-50 overflow-y-auto ${isMobile ? 'p-4' : 'p-6'}`}>
+
+               {/* Mobile Tabs */}
+               {isMobile && (
+                  <div className="flex gap-2 overflow-x-auto pb-3 mb-4 no-scrollbar">
+                     {[
+                        { id: 'menu', label: 'Thực đơn Tuần' },
+                        { id: 'food_safety', label: 'Vệ sinh ATTP' },
+                        { id: 'nutrition', label: 'Dinh dưỡng' }
+                     ].map(tab => (
+                        <button
+                           key={tab.id}
+                           onClick={() => setActiveTab(tab.id as any)}
+                           className={`flex-shrink-0 px-3 py-1.5 text-xs font-bold rounded-full transition-all ${activeTab === tab.id
+                              ? 'bg-emerald-600 text-white shadow-md'
+                              : 'bg-white text-gray-600 border border-gray-200'
+                              }`}
+                        >
+                           {tab.label}
+                        </button>
+                     ))}
+                  </div>
+               )}
 
                {/* Toolbar */}
-               <div className="flex items-center justify-between mb-8">
-                  <h2 className="text-lg font-bold text-gray-800">{getTabLabel(activeTab)}</h2>
+               <div className={`flex items-center justify-between ${isMobile ? 'mb-4' : 'mb-8'}`}>
+                  <h2 className={`${isMobile ? 'text-base' : 'text-lg'} font-bold text-gray-800`}>{getTabLabel(activeTab)}</h2>
                   <div className="relative">
                      <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
                      <input
@@ -436,54 +464,68 @@ const BoardingMenu: React.FC = () => {
                         placeholder="Tìm kiếm hồ sơ..."
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
-                        className="pl-9 pr-4 py-2 border border-gray-200 rounded-full text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 w-64 bg-white shadow-sm"
+                        className={`pl-9 pr-4 py-2 border border-gray-200 rounded-full text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 ${isMobile ? 'w-40' : 'w-64'} bg-white shadow-sm`}
                      />
                   </div>
                </div>
 
                {/* Grid Cards */}
-               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                  {filteredDocs.map((doc) => (
+               <div className={`grid ${isMobile ? 'grid-cols-2 gap-3' : 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6'}`}>
+                  {filteredDocs.map((docItem) => (
                      <div
-                        key={doc.id}
-                        onClick={() => handleCardClick(doc)}
-                        className="group bg-white rounded-2xl border border-gray-100 p-6 shadow-sm hover:shadow-lg hover:border-emerald-200 cursor-pointer transition-all duration-300 flex flex-col items-center text-center relative overflow-hidden"
+                        key={docItem.id}
+                        onClick={() => handleCardClick(docItem)}
+                        className={`group bg-white rounded-2xl border border-gray-100 ${isMobile ? 'p-4' : 'p-6'} shadow-sm hover:shadow-lg hover:border-emerald-200 cursor-pointer transition-all duration-300 flex flex-col items-center text-center relative overflow-hidden`}
                      >
                         {/* Selection Overlay Effect */}
                         <div className="absolute inset-0 bg-emerald-50 opacity-0 group-hover:opacity-10 transition-opacity duration-300"></div>
 
-                        <FileTypeIcon type={doc.type} />
+                        {/* File Icon - smaller on mobile */}
+                        <div className={`${isMobile ? 'mb-2' : 'mb-4'}`}>
+                           {isMobile ? (
+                              <div className="h-10 w-10 flex items-center justify-center bg-gray-100 rounded-lg">
+                                 {docItem.type === 'excel' && <FileSpreadsheet className="h-5 w-5 text-green-600" />}
+                                 {docItem.type === 'pdf' && <FileIcon className="h-5 w-5 text-red-500" />}
+                                 {docItem.type === 'word' && <FileText className="h-5 w-5 text-blue-600" />}
+                                 {!['excel', 'pdf', 'word'].includes(docItem.type) && <FileText className="h-5 w-5 text-gray-400" />}
+                              </div>
+                           ) : (
+                              <FileTypeIcon type={docItem.type} />
+                           )}
+                        </div>
 
-                        <h3 className="text-sm font-bold text-gray-800 mb-1 line-clamp-2 group-hover:text-emerald-700 transition-colors">
-                           {doc.name}
+                        <h3 className={`${isMobile ? 'text-xs' : 'text-sm'} font-bold text-gray-800 mb-1 line-clamp-2 group-hover:text-emerald-700 transition-colors`}>
+                           {docItem.name}
                         </h3>
 
-                        <p className="text-xs text-gray-500 mb-4">
-                           Đăng bởi <span className="font-medium text-gray-700">{doc.uploader.name}</span>
+                        <p className={`${isMobile ? 'text-[10px]' : 'text-xs'} text-gray-500 ${isMobile ? 'mb-2' : 'mb-4'}`}>
+                           Đăng bởi <span className="font-medium text-gray-700">{docItem.uploader.name}</span>
                         </p>
 
                         {/* Card Footer */}
-                        <div className="w-full pt-4 border-t border-gray-50 flex items-center justify-between mt-auto relative z-10">
+                        <div className={`w-full ${isMobile ? 'pt-2' : 'pt-4'} border-t border-gray-50 flex items-center justify-between mt-auto relative z-10`}>
                            <span className="text-[10px] text-gray-400 flex items-center gap-1">
                               <Calendar className="h-3 w-3" />
-                              {new Date(doc.uploadDate).toLocaleDateString('vi-VN')}
+                              {new Date(docItem.uploadDate).toLocaleDateString('vi-VN')}
                            </span>
 
                            <div className="flex items-center gap-1">
-                              {doc.comments.length > 0 && (
-                                 <div className="flex items-center gap-1 text-[10px] font-bold text-red-500 bg-red-50 px-1.5 py-0.5 rounded-full mr-1">
-                                    <MessageCircle className="h-3 w-3" />
-                                    {doc.comments.length}
+                              {docItem.comments.length > 0 && (
+                                 <div className="flex items-center gap-0.5 text-[10px] font-bold text-red-500 bg-red-50 px-1 py-0.5 rounded-full">
+                                    <MessageCircle className="h-2.5 w-2.5" />
+                                    {docItem.comments.length}
                                  </div>
                               )}
 
-                              <button
-                                 onClick={(e) => openDeleteModal(doc, e)}
-                                 className="text-gray-400 hover:text-red-600 p-1.5 rounded-full hover:bg-red-50 transition-colors"
-                                 title="Xóa tài liệu"
-                              >
-                                 <Trash2 className="h-4 w-4" />
-                              </button>
+                              {!isMobile && (
+                                 <button
+                                    onClick={(e) => openDeleteModal(docItem, e)}
+                                    className="text-gray-400 hover:text-red-600 p-1.5 rounded-full hover:bg-red-50 transition-colors"
+                                    title="Xóa tài liệu"
+                                 >
+                                    <Trash2 className="h-4 w-4" />
+                                 </button>
+                              )}
                            </div>
                         </div>
                      </div>
@@ -535,156 +577,214 @@ const BoardingMenu: React.FC = () => {
 
          {/* --- DRAWER (File Details & Preview) --- */}
          {isModalOpen && selectedDoc && (
-            <div className="fixed inset-0 z-50 overflow-hidden flex justify-end">
-               <div
-                  className="absolute inset-0 bg-gray-900/40 backdrop-blur-sm transition-opacity"
-                  onClick={() => setIsModalOpen(false)}
-               ></div>
-
-               <div className="relative w-full max-w-6xl bg-white h-full shadow-2xl flex flex-col animate-in slide-in-from-right duration-300">
-                  {/* Header */}
-                  <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-emerald-50 flex-shrink-0">
-                     <div className="flex items-center gap-3">
-                        <div className="p-2 bg-white rounded-lg border border-emerald-100 shadow-sm">
-                           <FileText className="h-5 w-5 text-emerald-600" />
-                        </div>
-                        <div>
-                           <span className="text-[10px] font-bold text-emerald-600 uppercase tracking-wider mb-0.5 block">
-                              Chi tiết hồ sơ
-                           </span>
-                           <h2 className="text-lg font-bold text-gray-900 leading-tight line-clamp-1">{selectedDoc.name}</h2>
-                        </div>
-                     </div>
-                     <div className="flex items-center gap-2">
-                        <button
-                           onClick={() => {
-                              if (selectedDoc.fileUrl && selectedDoc.fileUrl !== '#') {
-                                 window.open(selectedDoc.fileUrl, '_blank');
-                              } else {
-                                 addToast("Không có file", "Tài liệu này không có file đính kèm.", "warning");
-                              }
-                           }}
-                           className="p-2 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                           title="Tải xuống"
-                        >
-                           <Download className="h-5 w-5" />
-                        </button>
-                        <button onClick={() => setIsModalOpen(false)} className="p-2 text-gray-400 hover:text-gray-600 rounded-full hover:bg-gray-200 transition-colors">
-                           <X className="h-6 w-6" />
-                        </button>
+            isMobile ? (
+               /* Mobile: Full Screen Modal */
+               <div className="fixed inset-0 z-50 bg-white flex flex-col animate-in fade-in duration-200">
+                  {/* Mobile Header */}
+                  <div className="flex items-center gap-3 px-4 py-3 border-b border-gray-200 bg-white flex-shrink-0 safe-area-inset-top">
+                     <button
+                        onClick={() => setIsModalOpen(false)}
+                        className="p-2 -ml-2 text-gray-600 hover:bg-gray-100 rounded-full"
+                     >
+                        <ChevronRight className="h-5 w-5 rotate-180" />
+                     </button>
+                     <div className="flex-1 min-w-0">
+                        <h2 className="text-sm font-bold text-gray-900 truncate">{selectedDoc.name}</h2>
+                        <p className="text-[10px] text-gray-500">{getTabLabel(activeTab)} • {new Date(selectedDoc.uploadDate).toLocaleDateString('vi-VN')}</p>
                      </div>
                   </div>
 
-                  {/* Split View Content */}
-                  <div className="flex-1 overflow-hidden flex flex-col md:flex-row">
+                  {/* Mobile Document Preview - Full height */}
+                  <div className="flex-1 bg-gray-100 overflow-hidden">
+                     {renderFilePreview(false)}
+                  </div>
 
-                     {/* Left: Preview Area (Scrollable) */}
-                     <div className="flex-1 overflow-hidden bg-gray-100 border-b md:border-b-0 md:border-r border-gray-200 relative flex flex-col">
-                        {/* Floating Action for Preview */}
-                        <div className="absolute top-4 right-6 flex gap-2 z-10">
-                           <button
-                              onClick={() => setIsFullScreenPreviewOpen(true)}
-                              className="bg-white/80 backdrop-blur p-1.5 rounded-md shadow-sm text-gray-600 hover:text-emerald-600 border border-gray-200 hover:scale-110 transition-all"
-                              title="Phóng to toàn màn hình"
-                           >
-                              <Maximize2 className="h-4 w-4" />
-                           </button>
+                  {/* Mobile Bottom Action Bar */}
+                  <div className="flex-shrink-0 bg-white border-t border-gray-200 px-4 py-3 safe-area-inset-bottom">
+                     <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-2 flex-1 min-w-0">
+                           <div className="h-7 w-7 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-700 font-bold text-[10px] flex-shrink-0">
+                              {selectedDoc.uploader.name.charAt(0)}
+                           </div>
+                           <span className="text-xs text-gray-600 truncate">{selectedDoc.uploader.name}</span>
+                           {selectedDoc.comments.length > 0 && (
+                              <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-blue-100 text-blue-700">
+                                 <MessageCircle className="w-2.5 h-2.5 mr-0.5" />
+                                 {selectedDoc.comments.length}
+                              </span>
+                           )}
                         </div>
+                        <button
+                           onClick={(e) => openDeleteModal(selectedDoc, e)}
+                           className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg"
+                        >
+                           <Trash2 className="h-4 w-4" />
+                        </button>
+                        <a
+                           href={selectedDoc.fileUrl}
+                           download
+                           className="flex items-center gap-1.5 px-4 py-2 bg-emerald-600 text-white rounded-lg text-sm font-medium shadow-md"
+                           onClick={(e) => e.stopPropagation()}
+                        >
+                           <Download className="h-4 w-4" />
+                           Tải về
+                        </a>
+                     </div>
+                  </div>
+               </div>
+            ) : (
+               /* Desktop: Slide-in Panel */
+               <div className="fixed inset-0 z-50 overflow-hidden flex justify-end">
+                  <div
+                     className="absolute inset-0 bg-gray-900/40 backdrop-blur-sm transition-opacity"
+                     onClick={() => setIsModalOpen(false)}
+                  ></div>
 
-                        {/* Render Dynamic Preview - Full Height */}
-                        <div className="flex-1 w-full h-full">
-                           {renderFilePreview(false)}
+                  <div className="relative w-full max-w-6xl bg-white h-full shadow-2xl flex flex-col animate-in slide-in-from-right duration-300">
+                     {/* Header */}
+                     <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-emerald-50 flex-shrink-0">
+                        <div className="flex items-center gap-3">
+                           <div className="p-2 bg-white rounded-lg border border-emerald-100 shadow-sm">
+                              <FileText className="h-5 w-5 text-emerald-600" />
+                           </div>
+                           <div>
+                              <span className="text-[10px] font-bold text-emerald-600 uppercase tracking-wider mb-0.5 block">
+                                 Chi tiết hồ sơ
+                              </span>
+                              <h2 className="text-lg font-bold text-gray-900 leading-tight line-clamp-1">{selectedDoc.name}</h2>
+                           </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                           <button
+                              onClick={() => {
+                                 if (selectedDoc.fileUrl && selectedDoc.fileUrl !== '#') {
+                                    window.open(selectedDoc.fileUrl, '_blank');
+                                 } else {
+                                    addToast("Không có file", "Tài liệu này không có file đính kèm.", "error");
+                                 }
+                              }}
+                              className="p-2 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                              title="Tải xuống"
+                           >
+                              <Download className="h-5 w-5" />
+                           </button>
+                           <button onClick={() => setIsModalOpen(false)} className="p-2 text-gray-400 hover:text-gray-600 rounded-full hover:bg-gray-200 transition-colors">
+                              <X className="h-6 w-6" />
+                           </button>
                         </div>
                      </div>
 
-                     {/* Right: Discussion / Meta (Fixed Width) */}
-                     <div className="w-full md:w-72 lg:w-80 bg-white flex flex-col h-1/2 md:h-full flex-shrink-0">
+                     {/* Split View Content */}
+                     <div className="flex-1 overflow-hidden flex flex-row">
 
-                        {/* Meta Info */}
-                        <div className="p-4 border-b border-gray-100 bg-white">
-                           <div className="flex items-center justify-between mb-2">
-                              <span className="text-xs text-gray-500">Người đăng</span>
-                              <span className="text-xs font-bold text-gray-800">{selectedDoc.uploader.name}</span>
+                        {/* Left: Preview Area (Scrollable) */}
+                        <div className="flex-1 overflow-hidden bg-gray-100 border-r border-gray-200 relative flex flex-col">
+                           {/* Floating Action for Preview */}
+                           <div className="absolute top-4 right-6 flex gap-2 z-10">
+                              <button
+                                 onClick={() => setIsFullScreenPreviewOpen(true)}
+                                 className="bg-white/80 backdrop-blur p-1.5 rounded-md shadow-sm text-gray-600 hover:text-emerald-600 border border-gray-200 hover:scale-110 transition-all"
+                                 title="Phóng to toàn màn hình"
+                              >
+                                 <Maximize2 className="h-4 w-4" />
+                              </button>
                            </div>
-                           <div className="flex items-center justify-between">
-                              <span className="text-xs text-gray-500">Ngày tải lên</span>
-                              <span className="text-xs font-bold text-gray-800">{new Date(selectedDoc.uploadDate).toLocaleDateString('vi-VN')}</span>
+
+                           {/* Render Dynamic Preview - Full Height */}
+                           <div className="flex-1 w-full h-full">
+                              {renderFilePreview(false)}
                            </div>
-                           {selectedDoc.category === 'menu' && selectedDoc.startDate && selectedDoc.endDate && (
-                              <div className="mt-2 pt-2 border-t border-gray-100">
-                                 <span className="text-xs text-gray-500 block mb-1">Thời gian áp dụng</span>
-                                 <div className="flex items-center gap-1 text-xs text-gray-700">
-                                    <Calendar className="h-3 w-3" />
-                                    <span>{new Date(selectedDoc.startDate).toLocaleDateString('vi-VN')}</span>
-                                    <span>→</span>
-                                    <span>{new Date(selectedDoc.endDate).toLocaleDateString('vi-VN')}</span>
-                                 </div>
-                              </div>
-                           )}
                         </div>
 
-                        {/* Comments Area (Scrollable) */}
-                        <div className="flex-1 overflow-y-auto p-4 bg-white">
-                           <h3 className="text-sm font-bold text-gray-800 mb-4 flex items-center gap-2 sticky top-0 bg-white pb-2 z-10">
-                              <MessageCircle className="h-4 w-4 text-emerald-500" />
-                              Góp ý chuyên môn
-                           </h3>
+                        {/* Right: Discussion / Meta (Fixed Width) */}
+                        <div className="w-72 lg:w-80 bg-white flex flex-col h-full flex-shrink-0">
 
-                           <div className="space-y-4">
-                              {selectedDoc.comments && selectedDoc.comments.length > 0 ? (
-                                 selectedDoc.comments.map((comment) => (
-                                    <div key={comment.id} className="flex gap-3">
-                                       <div className="h-8 w-8 rounded-full bg-emerald-100 text-emerald-700 border border-emerald-200 flex items-center justify-center text-xs font-bold flex-shrink-0">
-                                          {comment.userName.charAt(0)}
-                                       </div>
-                                       <div className="bg-gray-50 rounded-xl rounded-tl-none p-3 flex-1 border border-gray-100">
-                                          <div className="flex items-baseline gap-2 mb-1">
-                                             <span className="text-xs font-bold text-gray-900">{comment.userName}</span>
-                                             <span className="text-[10px] text-gray-500">{comment.userRole}</span>
-                                          </div>
-                                          <p className="text-sm text-gray-800 leading-relaxed">{comment.content}</p>
-                                          <p className="text-[10px] text-gray-400 mt-1">
-                                             {new Date(comment.timestamp).toLocaleString('vi-VN')}
-                                          </p>
-                                       </div>
+                           {/* Meta Info */}
+                           <div className="p-4 border-b border-gray-100 bg-white">
+                              <div className="flex items-center justify-between mb-2">
+                                 <span className="text-xs text-gray-500">Người đăng</span>
+                                 <span className="text-xs font-bold text-gray-800">{selectedDoc.uploader.name}</span>
+                              </div>
+                              <div className="flex items-center justify-between">
+                                 <span className="text-xs text-gray-500">Ngày tải lên</span>
+                                 <span className="text-xs font-bold text-gray-800">{new Date(selectedDoc.uploadDate).toLocaleDateString('vi-VN')}</span>
+                              </div>
+                              {selectedDoc.category === 'menu' && (selectedDoc as any).startDate && (selectedDoc as any).endDate && (
+                                 <div className="mt-2 pt-2 border-t border-gray-100">
+                                    <span className="text-xs text-gray-500 block mb-1">Thời gian áp dụng</span>
+                                    <div className="flex items-center gap-1 text-xs text-gray-700">
+                                       <Calendar className="h-3 w-3" />
+                                       <span>{new Date((selectedDoc as any).startDate).toLocaleDateString('vi-VN')}</span>
+                                       <span>→</span>
+                                       <span>{new Date((selectedDoc as any).endDate).toLocaleDateString('vi-VN')}</span>
                                     </div>
-                                 ))
-                              ) : (
-                                 <div className="text-center py-12 flex flex-col items-center text-gray-300">
-                                    <MessageCircle className="h-10 w-10 mb-2 opacity-50" />
-                                    <span className="text-xs italic">Chưa có góp ý nào.</span>
                                  </div>
                               )}
-                              <div ref={commentsEndRef} />
                            </div>
-                        </div>
 
-                        {/* Footer Input */}
-                        <div className="p-4 border-t border-gray-200 bg-gray-50">
-                           <form onSubmit={handlePostComment} className="relative">
-                              <input
-                                 type="text"
-                                 className="w-full pl-4 pr-12 py-3 bg-white border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent shadow-sm"
-                                 placeholder="Nhập ý kiến chỉ đạo..."
-                                 value={newComment}
-                                 onChange={(e) => setNewComment(e.target.value)}
-                              />
-                              <button
-                                 type="submit"
-                                 disabled={!newComment.trim()}
-                                 className="absolute right-2 top-1/2 transform -translate-y-1/2 p-1.5 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:opacity-50 transition-all"
-                              >
-                                 <Send className="h-4 w-4" />
-                              </button>
-                           </form>
-                           <p className="text-[10px] text-gray-400 mt-2 text-center flex items-center justify-center gap-1">
-                              <Lock className="h-2.5 w-2.5" /> Chỉ nội bộ BGH xem được.
-                           </p>
+                           {/* Comments Area (Scrollable) */}
+                           <div className="flex-1 overflow-y-auto p-4 bg-white">
+                              <h3 className="text-sm font-bold text-gray-800 mb-4 flex items-center gap-2 sticky top-0 bg-white pb-2 z-10">
+                                 <MessageCircle className="h-4 w-4 text-emerald-500" />
+                                 Góp ý chuyên môn
+                              </h3>
+
+                              <div className="space-y-4">
+                                 {selectedDoc.comments && selectedDoc.comments.length > 0 ? (
+                                    selectedDoc.comments.map((comment) => (
+                                       <div key={comment.id} className="flex gap-3">
+                                          <div className="h-8 w-8 rounded-full bg-emerald-100 text-emerald-700 border border-emerald-200 flex items-center justify-center text-xs font-bold flex-shrink-0">
+                                             {comment.userName.charAt(0)}
+                                          </div>
+                                          <div className="bg-gray-50 rounded-xl rounded-tl-none p-3 flex-1 border border-gray-100">
+                                             <div className="flex items-baseline gap-2 mb-1">
+                                                <span className="text-xs font-bold text-gray-900">{comment.userName}</span>
+                                                <span className="text-[10px] text-gray-500">{comment.userRole}</span>
+                                             </div>
+                                             <p className="text-sm text-gray-800 leading-relaxed">{comment.content}</p>
+                                             <p className="text-[10px] text-gray-400 mt-1">
+                                                {new Date(comment.timestamp).toLocaleString('vi-VN')}
+                                             </p>
+                                          </div>
+                                       </div>
+                                    ))
+                                 ) : (
+                                    <div className="text-center py-12 flex flex-col items-center text-gray-300">
+                                       <MessageCircle className="h-10 w-10 mb-2 opacity-50" />
+                                       <span className="text-xs italic">Chưa có góp ý nào.</span>
+                                    </div>
+                                 )}
+                                 <div ref={commentsEndRef} />
+                              </div>
+                           </div>
+
+                           {/* Footer Input */}
+                           <div className="p-4 border-t border-gray-200 bg-gray-50">
+                              <form onSubmit={handlePostComment} className="relative">
+                                 <input
+                                    type="text"
+                                    className="w-full pl-4 pr-12 py-3 bg-white border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent shadow-sm"
+                                    placeholder="Nhập ý kiến chỉ đạo..."
+                                    value={newComment}
+                                    onChange={(e) => setNewComment(e.target.value)}
+                                 />
+                                 <button
+                                    type="submit"
+                                    disabled={!newComment.trim()}
+                                    className="absolute right-2 top-1/2 transform -translate-y-1/2 p-1.5 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:opacity-50 transition-all"
+                                 >
+                                    <Send className="h-4 w-4" />
+                                 </button>
+                              </form>
+                              <p className="text-[10px] text-gray-400 mt-2 text-center flex items-center justify-center gap-1">
+                                 <Lock className="h-2.5 w-2.5" /> Chỉ nội bộ BGH xem được.
+                              </p>
+                           </div>
                         </div>
                      </div>
                   </div>
                </div>
-            </div>
+            )
          )}
 
          {/* --- FULL SCREEN PREVIEW MODAL --- */}

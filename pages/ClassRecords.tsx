@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import useMobile from '../hooks/useMobile';
 import { MOCK_CLASSES } from '../data/mockData';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import {
@@ -101,6 +102,7 @@ const ClassRecords: React.FC = () => {
    const navigate = useNavigate();
    const [searchParams, setSearchParams] = useSearchParams();
    const { user } = useAuth();
+   const isMobile = useMobile();
    const { addToast } = useNotification();
    const { currentSchoolYear } = useSchoolYear();
 
@@ -1076,112 +1078,177 @@ const ClassRecords: React.FC = () => {
 
          {/* --- 1. HEADER KHU VỰC --- */}
          <div className="bg-white border-b border-amber-200 sticky top-0 z-30 shadow-sm">
-            <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-5">
-               {/* Breadcrumb */}
-               <div className="flex items-center gap-2 text-xs text-gray-500 mb-3">
-                  <span className="cursor-pointer hover:text-amber-600" onClick={() => navigate('/')}>Dashboard</span>
-                  <ChevronRight className="h-3 w-3" />
-                  <span className="cursor-pointer hover:text-amber-600">Tổ Chuyên Môn</span>
-                  <ChevronRight className="h-3 w-3" />
-                  <span className="font-semibold text-amber-700">Hồ sơ lớp học</span>
-               </div>
+            <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+               {/* Breadcrumb - Hidden on mobile */}
+               {!isMobile && (
+                  <div className="flex items-center gap-2 text-xs text-gray-500 mb-3">
+                     <span className="cursor-pointer hover:text-amber-600" onClick={() => navigate('/')}>Dashboard</span>
+                     <ChevronRight className="h-3 w-3" />
+                     <span className="cursor-pointer hover:text-amber-600">Tổ Chuyên Môn</span>
+                     <ChevronRight className="h-3 w-3" />
+                     <span className="font-semibold text-amber-700">Hồ sơ lớp học</span>
+                  </div>
+               )}
 
-               <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
+               <div className="flex items-center justify-between gap-3">
+                  {/* Left: Class Info */}
                   <div
-                     className="flex items-center gap-4 cursor-pointer hover:opacity-80 transition-opacity"
+                     className="flex items-center gap-3 cursor-pointer hover:opacity-80 transition-opacity flex-1 min-w-0"
                      onClick={() => navigate('/')}
                   >
-                     <div className="h-16 w-16 rounded-2xl bg-gradient-to-br from-amber-100 to-orange-100 flex items-center justify-center border border-amber-200 shadow-sm">
-                        <span className="text-2xl font-bold text-amber-600">{currentClass?.name?.split(' ').pop() || '?'}</span>
+                     {/* Class Avatar - Smaller on mobile */}
+                     <div className={`${isMobile ? 'h-10 w-10' : 'h-16 w-16'} rounded-xl bg-gradient-to-br from-amber-100 to-orange-100 flex items-center justify-center border border-amber-200 shadow-sm flex-shrink-0`}>
+                        <span className={`${isMobile ? 'text-lg' : 'text-2xl'} font-bold text-amber-600`}>{currentClass?.name?.split(' ').pop() || '?'}</span>
                      </div>
-                     <div>
-                        <h1 className="text-2xl font-bold text-gray-900">{currentClass?.name || 'Lớp học'}</h1>
-                        <div className="flex items-center gap-3 mt-1 text-sm text-gray-500">
-                           <span className="flex items-center gap-1">
-                              <LayoutGrid className="h-4 w-4" /> GVCN:
-                           </span>
-                           {currentClass?.teachers && currentClass.teachers.length > 1 ? (
-                              <div className="flex flex-wrap gap-1.5">
-                                 {currentClass.teachers.map((teacher: string, index: number) => (
-                                    <span
-                                       key={index}
-                                       className="px-2 py-0.5 bg-amber-100 text-amber-800 rounded-md font-semibold text-xs border border-amber-200">
-                                       {teacher}
-                                    </span>
-                                 ))}
-                              </div>
-                           ) : (
-                              <span className="font-semibold text-gray-700">
-                                 {currentClass?.teacher || 'Chưa cập nhật'}
+                     <div className="min-w-0 flex-1">
+                        <h1 className={`${isMobile ? 'text-lg' : 'text-2xl'} font-bold text-gray-900 truncate`}>{currentClass?.name || 'Lớp học'}</h1>
+                        {/* Teacher info - Simplified on mobile */}
+                        {!isMobile && (
+                           <div className="flex items-center gap-3 mt-1 text-sm text-gray-500">
+                              <span className="flex items-center gap-1">
+                                 <LayoutGrid className="h-4 w-4" /> GVCN:
                               </span>
-                           )}
-                        </div>
+                              {currentClass?.teachers && currentClass.teachers.length > 1 ? (
+                                 <div className="flex flex-wrap gap-1.5">
+                                    {currentClass.teachers.map((teacher: string, index: number) => (
+                                       <span
+                                          key={index}
+                                          className="px-2 py-0.5 bg-amber-100 text-amber-800 rounded-md font-semibold text-xs border border-amber-200">
+                                          {teacher}
+                                       </span>
+                                    ))}
+                                 </div>
+                              ) : (
+                                 <span className="font-semibold text-gray-700">
+                                    {currentClass?.teacher || 'Chưa cập nhật'}
+                                 </span>
+                              )}
+                           </div>
+                        )}
+                        {/* Mobile: Show teacher count only */}
+                        {isMobile && currentClass?.teachers && (
+                           <p className="text-xs text-gray-500 truncate">
+                              {currentClass.teachers.length} giáo viên
+                           </p>
+                        )}
                      </div>
                   </div>
 
+                  {/* Right: Upload Button */}
                   {canUpload && (
                      <button
                         onClick={handleOpenUpload}
-                        className="flex items-center gap-2 bg-amber-500 hover:bg-amber-600 text-white px-6 py-3 rounded-xl shadow-md shadow-amber-200 transition-all font-bold transform hover:-translate-y-0.5"
+                        className={`${isMobile
+                           ? 'p-3 rounded-full'
+                           : 'flex items-center gap-2 px-6 py-3 rounded-xl'
+                           } bg-amber-500 hover:bg-amber-600 text-white shadow-md shadow-amber-200 transition-all font-bold flex-shrink-0`}
+                        title="Tải lên hồ sơ lớp"
                      >
-                        <Upload className="h-5 w-5" />
-                        <span>Tải lên hồ sơ lớp</span>
+                        <Upload className={`${isMobile ? 'h-5 w-5' : 'h-5 w-5'}`} />
+                        {!isMobile && <span>Tải lên hồ sơ lớp</span>}
                      </button>
                   )}
                </div>
             </div>
 
             {/* --- 2. NAVIGATION TABS --- */}
-            <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 mt-6">
-               <div className="flex gap-1 overflow-x-auto no-scrollbar pb-0.5">
-                  <button
-                     onClick={() => setActiveTab('students')}
-                     className={`flex items-center gap-2 px-6 py-3 rounded-t-xl font-bold text-sm transition-all relative ${activeTab === 'students'
-                        ? 'bg-white text-amber-600 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] border-t border-x border-amber-100 z-10'
-                        : 'bg-transparent text-gray-500 hover:bg-amber-50 hover:text-amber-700'
-                        }`}
-                  >
-                     <List className="h-4 w-4" />
-                     DANH SÁCH LỚP
-                     {activeTab === 'students' && <div className="absolute bottom-0 left-0 right-0 h-1 bg-white"></div>}
-                  </button>
+            <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 mt-4">
+               {isMobile ? (
+                  /* Mobile: Segmented Control Style */
+                  <div className="flex bg-gray-100 rounded-xl p-1 gap-0.5">
+                     <button
+                        onClick={() => setActiveTab('students')}
+                        className={`flex-1 flex flex-col items-center gap-0.5 py-2.5 px-2 rounded-lg text-xs font-bold transition-all ${activeTab === 'students'
+                           ? 'bg-white text-amber-600 shadow-sm'
+                           : 'text-gray-500'
+                           }`}
+                     >
+                        <List className="h-4 w-4" />
+                        <span>Lớp</span>
+                     </button>
+                     <button
+                        onClick={() => setActiveTab('plan')}
+                        className={`flex-1 flex flex-col items-center gap-0.5 py-2.5 px-2 rounded-lg text-xs font-bold transition-all ${activeTab === 'plan'
+                           ? 'bg-white text-amber-600 shadow-sm'
+                           : 'text-gray-500'
+                           }`}
+                     >
+                        <FileText className="h-4 w-4" />
+                        <span>KH GD</span>
+                     </button>
+                     <button
+                        onClick={() => setActiveTab('assessment')}
+                        className={`flex-1 flex flex-col items-center gap-0.5 py-2.5 px-2 rounded-lg text-xs font-bold transition-all ${activeTab === 'assessment'
+                           ? 'bg-white text-amber-600 shadow-sm'
+                           : 'text-gray-500'
+                           }`}
+                     >
+                        <Baby className="h-4 w-4" />
+                        <span>Đánh giá</span>
+                     </button>
+                     <button
+                        onClick={() => setActiveTab('steam')}
+                        className={`flex-1 flex flex-col items-center gap-0.5 py-2.5 px-2 rounded-lg text-xs font-bold transition-all ${activeTab === 'steam'
+                           ? 'bg-white text-amber-600 shadow-sm'
+                           : 'text-gray-500'
+                           }`}
+                     >
+                        <FlaskConical className="h-4 w-4" />
+                        <span>STEAM</span>
+                     </button>
+                  </div>
+               ) : (
+                  /* Desktop: Original Tab Style */
+                  <div className="flex gap-1 overflow-x-auto no-scrollbar pb-0.5">
+                     <button
+                        onClick={() => setActiveTab('students')}
+                        className={`flex items-center gap-2 px-6 py-3 rounded-t-xl font-bold text-sm transition-all relative ${activeTab === 'students'
+                           ? 'bg-white text-amber-600 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] border-t border-x border-amber-100 z-10'
+                           : 'bg-transparent text-gray-500 hover:bg-amber-50 hover:text-amber-700'
+                           }`}
+                     >
+                        <List className="h-4 w-4" />
+                        DANH SÁCH LỚP
+                        {activeTab === 'students' && <div className="absolute bottom-0 left-0 right-0 h-1 bg-white"></div>}
+                     </button>
 
-                  <button
-                     onClick={() => setActiveTab('plan')}
-                     className={`flex items-center gap-2 px-6 py-3 rounded-t-xl font-bold text-sm transition-all relative ${activeTab === 'plan'
-                        ? 'bg-white text-amber-600 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] border-t border-x border-amber-100 z-10'
-                        : 'bg-transparent text-gray-500 hover:bg-amber-50 hover:text-amber-700'
-                        }`}
-                  >
-                     <FileText className="h-4 w-4" />
-                     KẾ HOẠCH GIÁO DỤC
-                     {activeTab === 'plan' && <div className="absolute bottom-0 left-0 right-0 h-1 bg-white"></div>}
-                  </button>
+                     <button
+                        onClick={() => setActiveTab('plan')}
+                        className={`flex items-center gap-2 px-6 py-3 rounded-t-xl font-bold text-sm transition-all relative ${activeTab === 'plan'
+                           ? 'bg-white text-amber-600 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] border-t border-x border-amber-100 z-10'
+                           : 'bg-transparent text-gray-500 hover:bg-amber-50 hover:text-amber-700'
+                           }`}
+                     >
+                        <FileText className="h-4 w-4" />
+                        KẾ HOẠCH GIÁO DỤC
+                        {activeTab === 'plan' && <div className="absolute bottom-0 left-0 right-0 h-1 bg-white"></div>}
+                     </button>
 
-                  <button
-                     onClick={() => setActiveTab('assessment')}
-                     className={`flex items-center gap-2 px-6 py-3 rounded-t-xl font-bold text-sm transition-all relative ${activeTab === 'assessment'
-                        ? 'bg-white text-amber-600 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] border-t border-x border-amber-100 z-10'
-                        : 'bg-transparent text-gray-500 hover:bg-amber-50 hover:text-amber-700'
-                        }`}
-                  >
-                     <Baby className="h-4 w-4" />
-                     ĐÁNH GIÁ TRẺ
-                     {activeTab === 'assessment' && <div className="absolute bottom-0 left-0 right-0 h-1 bg-white"></div>}
-                  </button>
+                     <button
+                        onClick={() => setActiveTab('assessment')}
+                        className={`flex items-center gap-2 px-6 py-3 rounded-t-xl font-bold text-sm transition-all relative ${activeTab === 'assessment'
+                           ? 'bg-white text-amber-600 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] border-t border-x border-amber-100 z-10'
+                           : 'bg-transparent text-gray-500 hover:bg-amber-50 hover:text-amber-700'
+                           }`}
+                     >
+                        <Baby className="h-4 w-4" />
+                        ĐÁNH GIÁ TRẺ
+                        {activeTab === 'assessment' && <div className="absolute bottom-0 left-0 right-0 h-1 bg-white"></div>}
+                     </button>
 
-                  <button
-                     onClick={() => setActiveTab('steam')}
-                     className={`flex items-center gap-2 px-6 py-3 rounded-t-xl font-bold text-sm transition-all relative ${activeTab === 'steam'
-                        ? 'bg-white text-amber-600 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] border-t border-x border-amber-100 z-10'
-                        : 'bg-transparent text-gray-500 hover:bg-amber-50 hover:text-amber-700'
-                        }`}
-                  >
-                     <FlaskConical className="h-4 w-4" />
-                     DỰ ÁN STEAM
-                     {activeTab === 'steam' && <div className="absolute bottom-0 left-0 right-0 h-1 bg-white"></div>}
-                  </button>
-               </div>
+                     <button
+                        onClick={() => setActiveTab('steam')}
+                        className={`flex items-center gap-2 px-6 py-3 rounded-t-xl font-bold text-sm transition-all relative ${activeTab === 'steam'
+                           ? 'bg-white text-amber-600 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] border-t border-x border-amber-100 z-10'
+                           : 'bg-transparent text-gray-500 hover:bg-amber-50 hover:text-amber-700'
+                           }`}
+                     >
+                        <FlaskConical className="h-4 w-4" />
+                        DỰ ÁN STEAM
+                        {activeTab === 'steam' && <div className="absolute bottom-0 left-0 right-0 h-1 bg-white"></div>}
+                     </button>
+                  </div>
+               )}
             </div>
          </div>
 
@@ -1363,49 +1430,101 @@ const ClassRecords: React.FC = () => {
                                                    : 'border-gray-100'
                                                    }`}
                                              >
-                                                <div className="flex items-center gap-3">
+                                                <div className="flex items-center gap-3 flex-1 min-w-0">
                                                    {getFileIcon(file.type)}
-                                                   <div>
-                                                      <div className="flex items-center gap-2">
-                                                         <h4 className="text-sm font-medium text-gray-800 group-hover:text-amber-700">
-                                                            {file.name}
-                                                         </h4>
-                                                         {/* Approval Status Badge */}
-                                                         {file.approval?.status === 'pending' && (
-                                                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-amber-100 text-amber-700">
-                                                               <Clock className="h-2.5 w-2.5" /> Chờ duyệt
-                                                            </span>
-                                                         )}
-                                                         {file.approval?.status === 'approved' && (
-                                                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-green-100 text-green-700">
-                                                               <CheckCircle2 className="h-2.5 w-2.5" /> Đã duyệt
-                                                            </span>
-                                                         )}
-                                                         {file.approval?.status === 'needs_revision' && (
-                                                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-amber-100 text-amber-700 animate-pulse">
-                                                               <AlertTriangle className="h-2.5 w-2.5" /> Cần sửa
-                                                            </span>
-                                                         )}
-                                                         {file.approval?.status === 'responded' && (
-                                                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-blue-100 text-blue-700">
-                                                               <MessageCircle className="h-2.5 w-2.5" /> Đã phản hồi
-                                                            </span>
-                                                         )}
-                                                         {file.approval?.status === 'rejected' && (
-                                                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-red-100 text-red-700" title={file.approval.rejectionReason}>
-                                                               <XCircle className="h-2.5 w-2.5" /> Từ chối
-                                                            </span>
-                                                         )}
-                                                      </div>
-                                                      <div className="flex items-center gap-2 text-xs text-gray-500">
-                                                         <Calendar className="h-3 w-3" /> {new Date(file.date).toLocaleDateString('vi-VN')}
-                                                         {/* Show Week badge if in Week view */}
-                                                         {planSubTab === 'week' && file.week && (
-                                                            <span className="px-1.5 py-0.5 bg-gray-100 rounded text-gray-600 font-medium">
-                                                               Tuần {file.week}
-                                                            </span>
-                                                         )}
-                                                      </div>
+                                                   <div className="flex-1 min-w-0">
+                                                      {/* Mobile: Stack layout | Desktop: Inline layout */}
+                                                      {isMobile ? (
+                                                         <>
+                                                            {/* Row 1: File Name (truncated) */}
+                                                            <h4 className="text-sm font-medium text-gray-800 group-hover:text-amber-700 truncate">
+                                                               {file.name}
+                                                            </h4>
+                                                            {/* Row 2: Badge + Date */}
+                                                            <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                                                               {/* Approval Status Badge */}
+                                                               {file.approval?.status === 'pending' && (
+                                                                  <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-amber-100 text-amber-700 whitespace-nowrap">
+                                                                     <Clock className="h-2.5 w-2.5" /> Chờ duyệt
+                                                                  </span>
+                                                               )}
+                                                               {file.approval?.status === 'approved' && (
+                                                                  <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-green-100 text-green-700 whitespace-nowrap">
+                                                                     <CheckCircle2 className="h-2.5 w-2.5" /> Đã duyệt
+                                                                  </span>
+                                                               )}
+                                                               {file.approval?.status === 'needs_revision' && (
+                                                                  <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-amber-100 text-amber-700 animate-pulse whitespace-nowrap">
+                                                                     <AlertTriangle className="h-2.5 w-2.5" /> Cần sửa
+                                                                  </span>
+                                                               )}
+                                                               {file.approval?.status === 'responded' && (
+                                                                  <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-blue-100 text-blue-700 whitespace-nowrap">
+                                                                     <MessageCircle className="h-2.5 w-2.5" /> Đã phản hồi
+                                                                  </span>
+                                                               )}
+                                                               {file.approval?.status === 'rejected' && (
+                                                                  <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-red-100 text-red-700 whitespace-nowrap" title={file.approval.rejectionReason}>
+                                                                     <XCircle className="h-2.5 w-2.5" /> Từ chối
+                                                                  </span>
+                                                               )}
+                                                               {/* Date */}
+                                                               <span className="flex items-center gap-1 text-[10px] text-gray-400">
+                                                                  <Calendar className="h-2.5 w-2.5" /> {new Date(file.date).toLocaleDateString('vi-VN')}
+                                                               </span>
+                                                               {/* Week badge if applicable */}
+                                                               {planSubTab === 'week' && file.week && (
+                                                                  <span className="px-1 py-0.5 bg-gray-100 rounded text-[10px] text-gray-600 font-medium whitespace-nowrap">
+                                                                     T{file.week}
+                                                                  </span>
+                                                               )}
+                                                            </div>
+                                                         </>
+                                                      ) : (
+                                                         /* Desktop: Original inline layout */
+                                                         <>
+                                                            <div className="flex items-center gap-2">
+                                                               <h4 className="text-sm font-medium text-gray-800 group-hover:text-amber-700">
+                                                                  {file.name}
+                                                               </h4>
+                                                               {/* Approval Status Badge */}
+                                                               {file.approval?.status === 'pending' && (
+                                                                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-amber-100 text-amber-700">
+                                                                     <Clock className="h-2.5 w-2.5" /> Chờ duyệt
+                                                                  </span>
+                                                               )}
+                                                               {file.approval?.status === 'approved' && (
+                                                                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-green-100 text-green-700">
+                                                                     <CheckCircle2 className="h-2.5 w-2.5" /> Đã duyệt
+                                                                  </span>
+                                                               )}
+                                                               {file.approval?.status === 'needs_revision' && (
+                                                                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-amber-100 text-amber-700 animate-pulse">
+                                                                     <AlertTriangle className="h-2.5 w-2.5" /> Cần sửa
+                                                                  </span>
+                                                               )}
+                                                               {file.approval?.status === 'responded' && (
+                                                                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-blue-100 text-blue-700">
+                                                                     <MessageCircle className="h-2.5 w-2.5" /> Đã phản hồi
+                                                                  </span>
+                                                               )}
+                                                               {file.approval?.status === 'rejected' && (
+                                                                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-red-100 text-red-700" title={file.approval.rejectionReason}>
+                                                                     <XCircle className="h-2.5 w-2.5" /> Từ chối
+                                                                  </span>
+                                                               )}
+                                                            </div>
+                                                            <div className="flex items-center gap-2 text-xs text-gray-500">
+                                                               <Calendar className="h-3 w-3" /> {new Date(file.date).toLocaleDateString('vi-VN')}
+                                                               {/* Show Week badge if in Week view */}
+                                                               {planSubTab === 'week' && file.week && (
+                                                                  <span className="px-1.5 py-0.5 bg-gray-100 rounded text-gray-600 font-medium">
+                                                                     Tuần {file.week}
+                                                                  </span>
+                                                               )}
+                                                            </div>
+                                                         </>
+                                                      )}
                                                       {/* Show rejection reason if rejected */}
                                                       {file.approval?.status === 'rejected' && file.approval.rejectionReason && (
                                                          <div className="mt-1 text-[10px] text-red-600">

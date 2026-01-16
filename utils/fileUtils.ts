@@ -18,17 +18,19 @@ export const isOfficeFile = (url: string): boolean => {
 export const getPreviewUrl = (url: string): string => {
     if (!url || url === '#') return '#';
 
-    // Check if it's an Excel file
+    // Check if it's an Excel file - these often fail in viewers
     const isExcel = url.toLowerCase().includes('.xls');
     if (isExcel) {
         return 'EXCEL_NO_PREVIEW'; // Special marker for Excel files
     }
 
     if (isOfficeFile(url)) {
-        // Google Docs Viewer works better with Firebase Storage authenticated URLs
+        // Use Google Docs Viewer - it works with Firebase Storage authenticated URLs
+        // Note: On mobile, user may need to tap "Open" button to view the document
         return `https://docs.google.com/viewer?url=${encodeURIComponent(url)}&embedded=true`;
     }
 
     // PDFs and images can be displayed directly
     return url;
 };
+

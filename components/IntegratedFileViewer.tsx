@@ -1,5 +1,6 @@
 import React, { useRef, useEffect, useState } from 'react';
-import { X, Loader2, PenLine, FileText, Download, MessageSquare, CheckCircle, AlertCircle, Send, User, Clock, Edit3, Trash2, ExternalLink, Info, HelpCircle } from 'lucide-react';
+import { X, Loader2, PenLine, FileText, Download, MessageSquare, CheckCircle, AlertCircle, Send, User, Clock, Edit3, Trash2, ExternalLink, Info, HelpCircle, ChevronUp, ChevronDown, Menu } from 'lucide-react';
+import useMobile from '../hooks/useMobile';
 import { storage, db } from '../firebase';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { doc, updateDoc, getDoc, arrayUnion } from 'firebase/firestore';
@@ -83,6 +84,8 @@ const IntegratedFileViewer: React.FC<IntegratedFileViewerProps> = ({
     const [deleteCommentId, setDeleteCommentId] = useState<string | null>(null);
     const [replyingToId, setReplyingToId] = useState<string | null>(null);
     const { user } = useAuth();
+    const isMobile = useMobile();
+    const [isMobileInfoOpen, setIsMobileInfoOpen] = useState(false); // For mobile history sheet
     const iframeRef = useRef<HTMLIFrameElement>(null);
     // Use a ref to keep the timestamp stable across re-renders (like toast updates)
     const timestampRef = useRef(Date.now());
@@ -318,23 +321,26 @@ const IntegratedFileViewer: React.FC<IntegratedFileViewerProps> = ({
             {/* Main Content Area - Editor */}
             <div className="flex-1 flex flex-col bg-white">
                 {/* Header */}
-                <div className="flex items-center justify-between px-4 py-3 bg-gradient-to-r from-blue-600 to-blue-700 text-white shadow-md flex-shrink-0">
+                <div className={`flex items-center justify-between px-4 py-3 bg-gradient-to-r from-blue-600 to-blue-700 text-white shadow-md flex-shrink-0 ${isMobile ? 'py-2' : ''}`}>
                     <div className="flex items-center gap-3">
+                        {/* Back button for mobile (optional if onClose is enough) */}
                         <div className="bg-white/20 p-2 rounded-lg">
                             <FileText className="h-5 w-5" />
                         </div>
-                        <div>
-                            <h2 className="font-semibold text-base line-clamp-1">{file.name}</h2>
-                            <p className="text-xs text-blue-100 opacity-80">
-                                {isEditable() ? 'Chỉnh sửa trực tiếp' : 'Chỉ xem'}
-                            </p>
+                        <div className="flex-1 min-w-0">
+                            <h2 className="font-semibold text-base truncate pr-2">{file.name}</h2>
+                            {!isMobile && (
+                                <p className="text-xs text-blue-100 opacity-80">
+                                    {isEditable() ? 'Chỉnh sửa trực tiếp' : 'Chỉ xem'}
+                                </p>
+                            )}
                         </div>
                     </div>
 
                     <div className="flex items-center gap-2">
 
-                        {/* Signature Download Button - Only for author with signature */}
-                        {canEdit && authorSignatureUrl && (
+                        {/* Signature Download Button - Only for author with signature & Desktop */}
+                        {!isMobile && canEdit && authorSignatureUrl && (
                             <div className="flex items-center gap-1">
                                 <button
                                     onClick={handleDownloadSignature}
@@ -354,10 +360,11 @@ const IntegratedFileViewer: React.FC<IntegratedFileViewerProps> = ({
                             </div>
                         )}
 
-                        <div className="text-xs bg-blue-800 px-2 py-1 rounded text-blue-200">
-
-                            {isSaving ? 'Đang lưu...' : 'Tự động lưu khi Save'}
-                        </div>
+                        {!isMobile && (
+                            <div className="text-xs bg-blue-800 px-2 py-1 rounded text-blue-200">
+                                {isSaving ? 'Đang lưu...' : 'Tự động lưu khi Save'}
+                            </div>
+                        )}
 
                         <a
                             href={file.url}
@@ -406,14 +413,26 @@ const IntegratedFileViewer: React.FC<IntegratedFileViewerProps> = ({
                     ) : (
                         <>
                             {file.url && (
-                                /* Use Ranuts X2T for all users - canSave controls save permission */
-                                <iframe
-                                    ref={iframeRef}
-                                    src={`/office/index.html?t=${timestampRef.current}&src=${encodeURIComponent(file.url)}&filename=${encodeURIComponent(getEditorFilename())}&locale=en&mode=edit&canSave=${canEdit && isEditable() ? 'true' : 'false'}`}
-                                    className="w-full h-full border-none"
-                                    title="Document Editor"
-                                    onLoad={() => setIsLoading(false)}
-                                />
+                                isMobile ? (
+                                    /* Mobile: Use Google Docs Viewer - lightweight, fast, view-only */
+                                    <iframe
+                                        ref={iframeRef}
+                                        src={`https://docs.google.com/viewer?url=${encodeURIComponent(file.url)}&embedded=true`}
+                                        className="w-full h-full border-none"
+                                        title="Document Viewer"
+                                        onLoad={() => setIsLoading(false)}
+                                        sandbox="allow-scripts allow-same-origin allow-popups"
+                                    />
+                                ) : (
+                                    /* Desktop: Use Ranuts X2T for full editing capabilities */
+                                    <iframe
+                                        ref={iframeRef}
+                                        src={`/office/index.html?t=${timestampRef.current}&src=${encodeURIComponent(file.url)}&filename=${encodeURIComponent(getEditorFilename())}&locale=en&mode=edit&canSave=${canEdit && isEditable() ? 'true' : 'false'}`}
+                                        className="w-full h-full border-none"
+                                        title="Document Editor"
+                                        onLoad={() => setIsLoading(false)}
+                                    />
+                                )
                             )}
                             {isLoading && (
                                 <div className="absolute inset-0 flex items-center justify-center bg-white z-10">
@@ -424,322 +443,466 @@ const IntegratedFileViewer: React.FC<IntegratedFileViewerProps> = ({
                         </>
                     )}
                 </div>
-            </div>
+                {/* Mobile Bottom Action Bar */}
+                {isMobile && (
+                    <div className="bg-white border-t border-gray-200 p-3 pb-safe flex flex-col gap-2 shadow-[0_-2px_10px_rgba(0,0,0,0.05)] z-20">
+                        {/* Status & Info Toggle */}
+                        <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                                {getApprovalBadge()}
+                                <button
+                                    onClick={() => setIsMobileInfoOpen(true)}
+                                    className="flex items-center gap-1 text-xs text-gray-500 hover:text-blue-600 bg-gray-100 px-2 py-1 rounded-full"
+                                >
+                                    <Info className="h-3 w-3" /> Chi tiết & LS
+                                    {file.commentCount ? <span className="ml-1 bg-red-500 text-white text-[9px] px-1 rounded-full">{file.commentCount}</span> : null}
+                                </button>
+                            </div>
 
-            {/* Right Sidebar - Metadata & Comments */}
-            <div className="w-80 bg-white border-l border-gray-200 flex flex-col flex-shrink-0">
-                {/* File Info */}
-                <div className="p-4 border-b border-gray-100 bg-gray-50">
-                    <div className="flex items-center justify-between mb-3">
-                        <h3 className="font-bold text-gray-800 text-sm">Thông tin file</h3>
-                        {getApprovalBadge()}
-                    </div>
-                    <div className="space-y-2 text-sm">
-                        <div className="flex items-center gap-2 text-gray-600">
-                            <User className="h-4 w-4 text-gray-400" />
-                            <span className="font-medium">{file.uploader || 'Không rõ'}</span>
+                            {/* Quick Signature for Mobile (simplified) */}
+                            {canEdit && authorSignatureUrl && (
+                                <button
+                                    onClick={handleDownloadSignature}
+                                    className="text-indigo-600 p-1.5 bg-indigo-50 rounded-lg"
+                                    title="Tải chữ ký"
+                                >
+                                    <PenLine className="h-4 w-4" />
+                                </button>
+                            )}
                         </div>
-                        <div className="flex items-center gap-2 text-gray-600">
-                            <Clock className="h-4 w-4 text-gray-400" />
-                            <span>{file.date ? new Date(file.date).toLocaleDateString('vi-VN') : 'Không rõ'}</span>
-                        </div>
-                    </div>
-                </div>
 
-                {/* Approval Actions */}
-                {canApprove && file.approval?.status !== 'approved' && (
-                    <div className="p-4 border-b border-gray-100 bg-blue-50 flex gap-2">
-                        <button
-                            onClick={handleApproveClick}
-                            className="flex-1 px-3 py-2 bg-green-600 hover:bg-green-700 text-white text-sm font-bold rounded-lg flex items-center justify-center gap-1 transition-colors"
-                        >
-                            <CheckCircle className="h-4 w-4" /> Duyệt
-                        </button>
-                        <button
-                            onClick={handleRejectClick}
-                            className="flex-1 px-3 py-2 bg-amber-500 hover:bg-amber-600 text-white text-sm font-bold rounded-lg flex items-center justify-center gap-1 transition-colors"
-                        >
-                            <AlertCircle className="h-4 w-4" /> Yêu cầu sửa
-                        </button>
-                    </div>
-                )}
-
-                {/* Comments Section */}
-                <div className="flex-1 flex flex-col overflow-hidden">
-                    <div className="p-3 bg-white border-b border-gray-100 flex items-center gap-2">
-                        <MessageSquare className="h-4 w-4 text-gray-500" />
-                        <h4 className="font-bold text-gray-800 text-sm">Lịch sử trao đổi</h4>
-                    </div>
-
-                    <div className="flex-1 overflow-y-auto p-3 space-y-3">
-                        {(file.comments || []).length === 0 ? (
-                            <p className="text-sm text-gray-400 italic text-center py-4">Chưa có trao đổi nào</p>
-                        ) : (
-                            (file.comments || []).map((c: Comment) => (
-                                <div key={c.id} className={`flex gap-2 ${c.type === 'response' ? 'flex-row-reverse' : ''}`}>
-                                    <div className={`h-7 w-7 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 text-white
-                                        ${c.type === 'request' ? 'bg-amber-500' : c.type === 'response' ? 'bg-blue-500' : 'bg-gray-400'}`}>
-                                        {c.userName?.charAt(0) || 'U'}
-                                    </div>
-                                    <div className={`flex-1 p-2 rounded-lg text-sm ${c.type === 'response' ? 'bg-blue-50' : 'bg-gray-100'}`}>
-                                        <div className="flex items-center justify-between mb-1">
-                                            <span className="font-semibold text-gray-700 text-xs">{c.userName}</span>
-                                            <div className="flex items-center gap-1">
-                                                <span className="text-[10px] text-gray-400">{new Date(c.timestamp).toLocaleDateString('vi-VN')}</span>
-                                                {/* Edit/Delete buttons - only for own comments */}
-                                                {canManageComment?.(c) && (
-                                                    <div className="flex items-center gap-1 ml-2">
-                                                        <button
-                                                            onClick={() => setEditingComment({ id: c.id, content: c.content })}
-                                                            className="p-1 text-gray-400 hover:text-blue-500 hover:bg-blue-50 rounded transition-colors"
-                                                            title="Sửa"
-                                                        >
-                                                            <Edit3 className="h-3 w-3" />
-                                                        </button>
-                                                        <button
-                                                            onClick={() => setDeleteCommentId(c.id)}
-                                                            className="p-1 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded transition-colors"
-                                                            title="Xóa"
-                                                        >
-                                                            <Trash2 className="h-3 w-3" />
-                                                        </button>
-                                                    </div>
-                                                )}
-                                            </div>
-                                        </div>
-                                        <p className="text-gray-600">{c.content}</p>
-
-                                        {/* Inline Reply for Author */}
-                                        {canRespond && c.type === 'request' && (
-                                            <div className="mt-2 pt-2 border-t border-gray-100">
-                                                {!replyingToId || replyingToId !== c.id ? (
-                                                    <button
-                                                        onClick={() => setReplyingToId(c.id)}
-                                                        className="text-xs text-blue-600 hover:text-blue-800 font-bold flex items-center gap-1 transition-colors"
-                                                    >
-                                                        <MessageSquare className="h-3 w-3" />
-                                                        Phản hồi yêu cầu này
-                                                    </button>
-                                                ) : (
-                                                    <div className="animate-in fade-in slide-in-from-top-1 duration-200">
-                                                        <div className="flex gap-2">
-                                                            <input
-                                                                type="text"
-                                                                autoFocus
-                                                                value={newComment}
-                                                                onChange={(e) => setNewComment(e.target.value)}
-                                                                placeholder="Nhập nội dung phản hồi..."
-                                                                className="flex-1 px-3 py-2 text-sm border border-blue-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
-                                                                onKeyDown={(e) => e.key === 'Enter' && handleSubmitComment()}
-                                                            />
-                                                            <button
-                                                                onClick={handleSubmitComment}
-                                                                disabled={!newComment.trim()}
-                                                                className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg disabled:opacity-50 shadow-sm"
-                                                            >
-                                                                <Send className="h-4 w-4" />
-                                                            </button>
-                                                            <button
-                                                                onClick={() => { setReplyingToId(null); setNewComment(''); }}
-                                                                className="px-2 py-2 text-gray-400 hover:bg-gray-100 rounded-lg"
-                                                            >
-                                                                <X className="h-4 w-4" />
-                                                            </button>
-                                                        </div>
-                                                    </div>
-                                                )}
-                                            </div>
-                                        )}
-                                    </div>
-                                </div>
-                            ))
+                        {/* Approval Actions Fixed at Bottom */}
+                        {canApprove && file.approval?.status !== 'approved' && (
+                            <div className="flex gap-2 mt-1">
+                                <button
+                                    onClick={handleApproveClick}
+                                    className="flex-1 px-3 py-2.5 bg-green-600 active:bg-green-700 text-white text-sm font-bold rounded-lg flex items-center justify-center gap-1 shadow-sm"
+                                >
+                                    <CheckCircle className="h-4 w-4" /> Duyệt
+                                </button>
+                                <button
+                                    onClick={handleRejectClick}
+                                    className="flex-1 px-3 py-2.5 bg-amber-500 active:bg-amber-600 text-white text-sm font-bold rounded-lg flex items-center justify-center gap-1 shadow-sm"
+                                >
+                                    <AlertCircle className="h-4 w-4" /> Yêu cầu sửa
+                                </button>
+                            </div>
                         )}
                     </div>
-
-
-                </div>
+                )}
             </div>
 
-
-
-            {/* Reject Modal */}
-            {showRejectModal && (
-                <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/50">
-                    <div className="bg-white rounded-xl shadow-2xl p-6 w-96 max-w-[90vw]">
-                        <h3 className="text-lg font-bold text-gray-800 mb-4">Yêu cầu sửa lại</h3>
-                        <textarea
-                            value={rejectReason}
-                            onChange={(e) => setRejectReason(e.target.value)}
-                            placeholder="Nhập lý do yêu cầu sửa..."
-                            className="w-full p-3 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 resize-none h-24 text-gray-800"
-                        />
-                        <div className="flex justify-end gap-2 mt-4">
-                            <button onClick={() => { setShowRejectModal(false); setRejectReason(''); }} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg text-sm font-medium">
-                                Hủy
-                            </button>
-                            <button onClick={handleSubmitReject} disabled={!rejectReason.trim()} className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-sm font-bold disabled:opacity-50">
-                                Gửi yêu cầu
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {/* Edit Comment Modal */}
-            {editingComment && (
-                <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/50">
-                    <div className="bg-white rounded-xl shadow-2xl p-6 w-96 max-w-[90vw]">
-                        <h3 className="text-lg font-bold text-gray-800 mb-4">Chỉnh sửa góp ý</h3>
-                        <textarea
-                            value={editingComment.content}
-                            onChange={(e) => setEditingComment({ ...editingComment, content: e.target.value })}
-                            placeholder="Nhập nội dung góp ý..."
-                            className="w-full p-3 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 resize-none h-24 text-gray-800"
-                        />
-                        <div className="flex justify-end gap-2 mt-4">
-                            <button onClick={() => setEditingComment(null)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg text-sm font-medium">
-                                Hủy
-                            </button>
-                            <button
-                                onClick={() => {
-                                    if (editingComment.content.trim() && onEditComment) {
-                                        onEditComment(editingComment.id, editingComment.content.trim());
-                                        setEditingComment(null);
-                                    }
-                                }}
-                                disabled={!editingComment.content.trim()}
-                                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-bold disabled:opacity-50"
-                            >
-                                Lưu thay đổi
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {/* Delete Comment Confirmation Modal */}
-            {deleteCommentId && (
-                <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/50">
-                    <div className="bg-white rounded-xl shadow-2xl p-6 w-96 max-w-[90vw]">
-                        <h3 className="text-lg font-bold text-gray-800 mb-2">Xác nhận xóa</h3>
-                        <p className="text-gray-600 text-sm mb-4">Bạn có chắc chắn muốn xóa góp ý này? Thao tác này không thể hoàn tác.</p>
-                        <div className="flex justify-end gap-2">
-                            <button onClick={() => setDeleteCommentId(null)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg text-sm font-medium">
-                                Hủy
-                            </button>
-                            <button
-                                onClick={() => {
-                                    if (onDeleteComment) {
-                                        onDeleteComment(deleteCommentId);
-                                        setDeleteCommentId(null);
-                                    }
-                                }}
-                                className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm font-bold"
-                            >
-                                Xóa
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {/* Instructions Modal */}
-            {showInstructionsModal && (
-                <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/50">
-                    <div className="bg-white rounded-xl shadow-2xl p-6 w-[500px] max-w-[90vw] max-h-[90vh] overflow-y-auto">
-                        <div className="flex items-center justify-between mb-4">
-                            <h3 className="text-lg font-bold text-gray-800 flex items-center gap-2">
-                                <Info className="h-5 w-5 text-blue-600" />
-                                Hướng dẫn chèn chữ ký vào tài liệu
-                            </h3>
-                            <button onClick={() => setShowInstructionsModal(false)} className="text-gray-400 hover:text-gray-600">
+            {/* Mobile Info Sheet (Bottom Sheet) */}
+            {isMobile && isMobileInfoOpen && (
+                <div className="fixed inset-0 z-[80] flex items-end justify-center bg-black/50 animate-in fade-in duration-200">
+                    <div className="bg-white w-full max-h-[80vh] rounded-t-2xl flex flex-col animate-in slide-in-from-bottom duration-300">
+                        <div className="flex items-center justify-between p-4 border-b border-gray-100">
+                            <h3 className="font-bold text-gray-800">Thông tin & Trao đổi</h3>
+                            <button onClick={() => setIsMobileInfoOpen(false)} className="p-2 hover:bg-gray-100 rounded-full">
                                 <X className="h-5 w-5" />
                             </button>
                         </div>
 
-                        <div className="space-y-4 text-sm text-gray-700">
-                            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                                <p className="font-semibold text-blue-800 mb-2">📌 Lưu ý quan trọng:</p>
-                                <p className="text-blue-700">Bạn vừa tải xuống file chữ ký. Hãy làm theo các bước dưới đây để chèn chữ ký vào tài liệu Word của bạn.</p>
-                            </div>
-
-                            <div className="space-y-3">
-                                <div className="flex gap-3">
-                                    <div className="flex-shrink-0 w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">1</div>
-                                    <div className="flex-1">
-                                        <p className="font-semibold text-gray-800 mb-1">Mở tài liệu Word</p>
-                                        <p className="text-gray-600">Mở tài liệu cần chèn chữ ký bằng Microsoft Word hoặc ứng dụng soạn thảo văn bản.</p>
-                                    </div>
+                        <div className="flex-1 overflow-y-auto p-4">
+                            {/* File Info */}
+                            <div className="bg-gray-50 rounded-lg p-3 mb-4 space-y-2 text-sm">
+                                <div className="flex items-center gap-2 text-gray-600">
+                                    <User className="h-4 w-4 text-gray-400" />
+                                    <span className="font-medium">{file.uploader || 'Không rõ'}</span>
                                 </div>
-
-                                <div className="flex gap-3">
-                                    <div className="flex-shrink-0 w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">2</div>
-                                    <div className="flex-1">
-                                        <p className="font-semibold text-gray-800 mb-1">Đặt con trỏ tại vị trí muốn chèn</p>
-                                        <p className="text-gray-600">Click vào vị trí trong tài liệu nơi bạn muốn đặt chữ ký (thường là cuối trang hoặc dưới văn bản).</p>
-                                    </div>
-                                </div>
-
-                                <div className="flex gap-3">
-                                    <div className="flex-shrink-0 w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">3</div>
-                                    <div className="flex-1">
-                                        <p className="font-semibold text-gray-800 mb-1">Vào menu Insert (Chèn)</p>
-                                        <p className="text-gray-600">Trên thanh menu, chọn tab <span className="font-semibold bg-gray-100 px-2 py-0.5 rounded">Insert</span> (hoặc <span className="font-semibold bg-gray-100 px-2 py-0.5 rounded">Chèn</span>).</p>
-                                    </div>
-                                </div>
-
-                                <div className="flex gap-3">
-                                    <div className="flex-shrink-0 w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">4</div>
-                                    <div className="flex-1">
-                                        <p className="font-semibold text-gray-800 mb-1">Chọn Image → Image From File</p>
-                                        <p className="text-gray-600">Click vào <span className="font-semibold bg-gray-100 px-2 py-0.5 rounded">Picture</span> (hoặc <span className="font-semibold bg-gray-100 px-2 py-0.5 rounded">Hình ảnh</span>), sau đó chọn <span className="font-semibold bg-gray-100 px-2 py-0.5 rounded">This Device</span> hoặc <span className="font-semibold bg-gray-100 px-2 py-0.5 rounded">From File</span>.</p>
-                                    </div>
-                                </div>
-
-                                <div className="flex gap-3">
-                                    <div className="flex-shrink-0 w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">5</div>
-                                    <div className="flex-1">
-                                        <p className="font-semibold text-gray-800 mb-1">Chọn file chữ ký vừa tải</p>
-                                        <p className="text-gray-600">Tìm và chọn file chữ ký <span className="font-mono bg-gray-100 px-2 py-0.5 rounded text-xs">chu_ky_[tên_của_bạn].png</span> trong thư mục Downloads.</p>
-                                    </div>
-                                </div>
-
-                                <div className="flex gap-3">
-                                    <div className="flex-shrink-0 w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">6</div>
-                                    <div className="flex-1">
-                                        <p className="font-semibold text-gray-800 mb-1">Điều chỉnh kích thước và vị trí</p>
-                                        <p className="text-gray-600">Sau khi chèn, bạn có thể kéo góc ảnh để thay đổi kích thước và di chuyển đến vị trí mong muốn.</p>
-                                    </div>
+                                <div className="flex items-center gap-2 text-gray-600">
+                                    <Clock className="h-4 w-4 text-gray-400" />
+                                    <span>{file.date ? new Date(file.date).toLocaleDateString('vi-VN') : 'Không rõ'}</span>
                                 </div>
                             </div>
 
-                            <div className="bg-green-50 border border-green-200 rounded-lg p-4 mt-4">
-                                <p className="font-semibold text-green-800 mb-1">✅ Hoàn thành!</p>
-                                <p className="text-green-700 text-xs">Chữ ký của bạn đã được chèn vào tài liệu. Bạn có thể lưu và chia sẻ tài liệu này.</p>
-                            </div>
+                            {/* Comments */}
+                            <h4 className="font-bold text-gray-800 text-sm mb-2 flex items-center gap-2">
+                                <MessageSquare className="h-4 w-4" /> Lịch sử trao đổi
+                            </h4>
+                            <CommentList
+                                comments={file.comments || []}
+                                canManageComment={canManageComment}
+                                onEdit={setEditingComment}
+                                onDelete={setDeleteCommentId}
+                                canRespond={canRespond}
+                                replyingToId={replyingToId}
+                                setReplyingToId={setReplyingToId}
+                                newComment={newComment}
+                                setNewComment={setNewComment}
+                                handleSubmitComment={handleSubmitComment}
+                            />
                         </div>
-
-                        <div className="flex justify-end mt-6">
+                        {/* Close/Action for Sheet */}
+                        <div className="p-3 border-t border-gray-100">
                             <button
-                                onClick={() => setShowInstructionsModal(false)}
-                                className="px-6 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-medium transition-colors"
+                                onClick={() => setIsMobileInfoOpen(false)}
+                                className="w-full py-3 bg-gray-100 text-gray-700 font-bold rounded-lg"
                             >
-                                Đã hiểu
+                                Đóng
                             </button>
                         </div>
                     </div>
                 </div>
             )}
 
+            {/* Right Sidebar - Metadata & Comments (Desktop) */}
+            {
+                !isMobile && (
+                    <div className="w-80 bg-white border-l border-gray-200 flex flex-col flex-shrink-0">
+                        {/* File Info */}
+                        <div className="p-4 border-b border-gray-100 bg-gray-50">
+                            <div className="flex items-center justify-between mb-3">
+                                <h3 className="font-bold text-gray-800 text-sm">Thông tin file</h3>
+                                {getApprovalBadge()}
+                            </div>
+                            <div className="space-y-2 text-sm">
+                                <div className="flex items-center gap-2 text-gray-600">
+                                    <User className="h-4 w-4 text-gray-400" />
+                                    <span className="font-medium">{file.uploader || 'Không rõ'}</span>
+                                </div>
+                                <div className="flex items-center gap-2 text-gray-600">
+                                    <Clock className="h-4 w-4 text-gray-400" />
+                                    <span>{file.date ? new Date(file.date).toLocaleDateString('vi-VN') : 'Không rõ'}</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Approval Actions */}
+                        {canApprove && file.approval?.status !== 'approved' && (
+                            <div className="p-4 border-b border-gray-100 bg-blue-50 flex gap-2">
+                                <button
+                                    onClick={handleApproveClick}
+                                    className="flex-1 px-3 py-2 bg-green-600 hover:bg-green-700 text-white text-sm font-bold rounded-lg flex items-center justify-center gap-1 transition-colors"
+                                >
+                                    <CheckCircle className="h-4 w-4" /> Duyệt
+                                </button>
+                                <button
+                                    onClick={handleRejectClick}
+                                    className="flex-1 px-3 py-2 bg-amber-500 hover:bg-amber-600 text-white text-sm font-bold rounded-lg flex items-center justify-center gap-1 transition-colors"
+                                >
+                                    <AlertCircle className="h-4 w-4" /> Yêu cầu sửa
+                                </button>
+                            </div>
+                        )}
+
+                        {/* Comments Section */}
+                        <div className="flex-1 flex flex-col overflow-hidden">
+                            <div className="p-3 bg-white border-b border-gray-100 flex items-center gap-2">
+                                <MessageSquare className="h-4 w-4 text-gray-500" />
+                                <h4 className="font-bold text-gray-800 text-sm">Lịch sử trao đổi</h4>
+                            </div>
+
+                            <div className="flex-1 overflow-y-auto p-3 space-y-3">
+                                <CommentList
+                                    comments={file.comments || []}
+                                    canManageComment={canManageComment}
+                                    onEdit={setEditingComment}
+                                    onDelete={setDeleteCommentId}
+                                    canRespond={canRespond}
+                                    replyingToId={replyingToId}
+                                    setReplyingToId={setReplyingToId}
+                                    newComment={newComment}
+                                    setNewComment={setNewComment}
+                                    handleSubmitComment={handleSubmitComment}
+                                />
+                            </div>
+                        </div>
+                    </div>
+                )
+            }
+
+
+
+            {/* Reject Modal */}
+            {
+                showRejectModal && (
+                    <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/50">
+                        <div className="bg-white rounded-xl shadow-2xl p-6 w-96 max-w-[90vw]">
+                            <h3 className="text-lg font-bold text-gray-800 mb-4">Yêu cầu sửa lại</h3>
+                            <textarea
+                                value={rejectReason}
+                                onChange={(e) => setRejectReason(e.target.value)}
+                                placeholder="Nhập lý do yêu cầu sửa..."
+                                className="w-full p-3 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 resize-none h-24 text-gray-800"
+                            />
+                            <div className="flex justify-end gap-2 mt-4">
+                                <button onClick={() => { setShowRejectModal(false); setRejectReason(''); }} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg text-sm font-medium">
+                                    Hủy
+                                </button>
+                                <button onClick={handleSubmitReject} disabled={!rejectReason.trim()} className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-sm font-bold disabled:opacity-50">
+                                    Gửi yêu cầu
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                )
+            }
+
+            {/* Edit Comment Modal */}
+            {
+                editingComment && (
+                    <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/50">
+                        <div className="bg-white rounded-xl shadow-2xl p-6 w-96 max-w-[90vw]">
+                            <h3 className="text-lg font-bold text-gray-800 mb-4">Chỉnh sửa góp ý</h3>
+                            <textarea
+                                value={editingComment.content}
+                                onChange={(e) => setEditingComment({ ...editingComment, content: e.target.value })}
+                                placeholder="Nhập nội dung góp ý..."
+                                className="w-full p-3 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 resize-none h-24 text-gray-800"
+                            />
+                            <div className="flex justify-end gap-2 mt-4">
+                                <button onClick={() => setEditingComment(null)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg text-sm font-medium">
+                                    Hủy
+                                </button>
+                                <button
+                                    onClick={() => {
+                                        if (editingComment.content.trim() && onEditComment) {
+                                            onEditComment(editingComment.id, editingComment.content.trim());
+                                            setEditingComment(null);
+                                        }
+                                    }}
+                                    disabled={!editingComment.content.trim()}
+                                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-bold disabled:opacity-50"
+                                >
+                                    Lưu thay đổi
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                )
+            }
+
+            {/* Delete Comment Confirmation Modal */}
+            {
+                deleteCommentId && (
+                    <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/50">
+                        <div className="bg-white rounded-xl shadow-2xl p-6 w-96 max-w-[90vw]">
+                            <h3 className="text-lg font-bold text-gray-800 mb-2">Xác nhận xóa</h3>
+                            <p className="text-gray-600 text-sm mb-4">Bạn có chắc chắn muốn xóa góp ý này? Thao tác này không thể hoàn tác.</p>
+                            <div className="flex justify-end gap-2">
+                                <button onClick={() => setDeleteCommentId(null)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg text-sm font-medium">
+                                    Hủy
+                                </button>
+                                <button
+                                    onClick={() => {
+                                        if (onDeleteComment) {
+                                            onDeleteComment(deleteCommentId);
+                                            setDeleteCommentId(null);
+                                        }
+                                    }}
+                                    className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm font-bold"
+                                >
+                                    Xóa
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                )
+            }
+
+            {/* Instructions Modal */}
+            {
+                showInstructionsModal && (
+                    <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/50">
+                        <div className="bg-white rounded-xl shadow-2xl p-6 w-[500px] max-w-[90vw] max-h-[90vh] overflow-y-auto">
+                            <div className="flex items-center justify-between mb-4">
+                                <h3 className="text-lg font-bold text-gray-800 flex items-center gap-2">
+                                    <Info className="h-5 w-5 text-blue-600" />
+                                    Hướng dẫn chèn chữ ký vào tài liệu
+                                </h3>
+                                <button onClick={() => setShowInstructionsModal(false)} className="text-gray-400 hover:text-gray-600">
+                                    <X className="h-5 w-5" />
+                                </button>
+                            </div>
+
+                            <div className="space-y-4 text-sm text-gray-700">
+                                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                                    <p className="font-semibold text-blue-800 mb-2">📌 Lưu ý quan trọng:</p>
+                                    <p className="text-blue-700">Bạn vừa tải xuống file chữ ký. Hãy làm theo các bước dưới đây để chèn chữ ký vào tài liệu Word của bạn.</p>
+                                </div>
+
+                                <div className="space-y-3">
+                                    <div className="flex gap-3">
+                                        <div className="flex-shrink-0 w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">1</div>
+                                        <div className="flex-1">
+                                            <p className="font-semibold text-gray-800 mb-1">Mở tài liệu Word</p>
+                                            <p className="text-gray-600">Mở tài liệu cần chèn chữ ký bằng Microsoft Word hoặc ứng dụng soạn thảo văn bản.</p>
+                                        </div>
+                                    </div>
+
+                                    <div className="flex gap-3">
+                                        <div className="flex-shrink-0 w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">2</div>
+                                        <div className="flex-1">
+                                            <p className="font-semibold text-gray-800 mb-1">Đặt con trỏ tại vị trí muốn chèn</p>
+                                            <p className="text-gray-600">Click vào vị trí trong tài liệu nơi bạn muốn đặt chữ ký (thường là cuối trang hoặc dưới văn bản).</p>
+                                        </div>
+                                    </div>
+
+                                    <div className="flex gap-3">
+                                        <div className="flex-shrink-0 w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">3</div>
+                                        <div className="flex-1">
+                                            <p className="font-semibold text-gray-800 mb-1">Vào menu Insert (Chèn)</p>
+                                            <p className="text-gray-600">Trên thanh menu, chọn tab <span className="font-semibold bg-gray-100 px-2 py-0.5 rounded">Insert</span> (hoặc <span className="font-semibold bg-gray-100 px-2 py-0.5 rounded">Chèn</span>).</p>
+                                        </div>
+                                    </div>
+
+                                    <div className="flex gap-3">
+                                        <div className="flex-shrink-0 w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">4</div>
+                                        <div className="flex-1">
+                                            <p className="font-semibold text-gray-800 mb-1">Chọn Image → Image From File</p>
+                                            <p className="text-gray-600">Click vào <span className="font-semibold bg-gray-100 px-2 py-0.5 rounded">Picture</span> (hoặc <span className="font-semibold bg-gray-100 px-2 py-0.5 rounded">Hình ảnh</span>), sau đó chọn <span className="font-semibold bg-gray-100 px-2 py-0.5 rounded">This Device</span> hoặc <span className="font-semibold bg-gray-100 px-2 py-0.5 rounded">From File</span>.</p>
+                                        </div>
+                                    </div>
+
+                                    <div className="flex gap-3">
+                                        <div className="flex-shrink-0 w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">5</div>
+                                        <div className="flex-1">
+                                            <p className="font-semibold text-gray-800 mb-1">Chọn file chữ ký vừa tải</p>
+                                            <p className="text-gray-600">Tìm và chọn file chữ ký <span className="font-mono bg-gray-100 px-2 py-0.5 rounded text-xs">chu_ky_[tên_của_bạn].png</span> trong thư mục Downloads.</p>
+                                        </div>
+                                    </div>
+
+                                    <div className="flex gap-3">
+                                        <div className="flex-shrink-0 w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">6</div>
+                                        <div className="flex-1">
+                                            <p className="font-semibold text-gray-800 mb-1">Điều chỉnh kích thước và vị trí</p>
+                                            <p className="text-gray-600">Sau khi chèn, bạn có thể kéo góc ảnh để thay đổi kích thước và di chuyển đến vị trí mong muốn.</p>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div className="bg-green-50 border border-green-200 rounded-lg p-4 mt-4">
+                                    <p className="font-semibold text-green-800 mb-1">✅ Hoàn thành!</p>
+                                    <p className="text-green-700 text-xs">Chữ ký của bạn đã được chèn vào tài liệu. Bạn có thể lưu và chia sẻ tài liệu này.</p>
+                                </div>
+                            </div>
+
+                            <div className="flex justify-end mt-6">
+                                <button
+                                    onClick={() => setShowInstructionsModal(false)}
+                                    className="px-6 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-medium transition-colors"
+                                >
+                                    Đã hiểu
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                )
+            }
+
             {/* Toast */}
 
-            {toast && (
-                <div className={`fixed bottom-4 left-1/2 -translate-x-1/2 z-[100] px-6 py-3 rounded-lg shadow-lg text-white font-medium flex items-center gap-2
+            {
+                toast && (
+                    <div className={`fixed bottom-4 left-1/2 -translate-x-1/2 z-[100] px-6 py-3 rounded-lg shadow-lg text-white font-medium flex items-center gap-2
                     ${toast.type === 'success' ? 'bg-green-600' : toast.type === 'error' ? 'bg-red-600' : 'bg-blue-600'}`}>
-                    {toast.type === 'success' && <span>✨</span>}
-                    {toast.type === 'error' && <span>⚠️</span>}
-                    {toast.message}
-                </div>
+                        {toast.type === 'success' && <span>✨</span>}
+                        {toast.type === 'error' && <span>⚠️</span>}
+                        {toast.message}
+                    </div>
+                )
+            }
+        </div >
+    );
+};
+
+// Extracted CommentList component for reusability (Desktop Sidebar & Mobile Sheet)
+const CommentList = ({
+    comments,
+    canManageComment,
+    onEdit,
+    onDelete,
+    canRespond, // Add missing props
+    replyingToId,
+    setReplyingToId,
+    newComment,
+    setNewComment,
+    handleSubmitComment
+}: any) => {
+    return (
+        <div className="space-y-3">
+            {(!comments || comments.length === 0) ? (
+                <p className="text-sm text-gray-400 italic text-center py-4">Chưa có trao đổi nào</p>
+            ) : (
+                comments.map((c: Comment) => (
+                    <div key={c.id} className={`flex gap-2 ${c.type === 'response' ? 'flex-row-reverse' : ''}`}>
+                        <div className={`h-7 w-7 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 text-white
+                            ${c.type === 'request' ? 'bg-amber-500' : c.type === 'response' ? 'bg-blue-500' : 'bg-gray-400'}`}>
+                            {c.userName?.charAt(0) || 'U'}
+                        </div>
+                        <div className={`flex-1 p-2 rounded-lg text-sm ${c.type === 'response' ? 'bg-blue-50' : 'bg-gray-100'}`}>
+                            <div className="flex items-center justify-between mb-1">
+                                <span className="font-semibold text-gray-700 text-xs">{c.userName}</span>
+                                <div className="flex items-center gap-1">
+                                    <span className="text-[10px] text-gray-400">{new Date(c.timestamp).toLocaleDateString('vi-VN')}</span>
+                                    {/* Edit/Delete buttons - only for own comments */}
+                                    {canManageComment?.(c) && (
+                                        <div className="flex items-center gap-1 ml-2">
+                                            <button
+                                                onClick={() => onEdit({ id: c.id, content: c.content })}
+                                                className="p-1 text-gray-400 hover:text-blue-500 hover:bg-blue-50 rounded transition-colors"
+                                                title="Sửa"
+                                            >
+                                                <Edit3 className="h-3 w-3" />
+                                            </button>
+                                            <button
+                                                onClick={() => onDelete(c.id)}
+                                                className="p-1 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded transition-colors"
+                                                title="Xóa"
+                                            >
+                                                <Trash2 className="h-3 w-3" />
+                                            </button>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                            <p className="text-gray-600">{c.content}</p>
+
+                            {/* Inline Reply for Author */}
+                            {canRespond && c.type === 'request' && (
+                                <div className="mt-2 pt-2 border-t border-gray-100">
+                                    {!replyingToId || replyingToId !== c.id ? (
+                                        <button
+                                            onClick={() => setReplyingToId(c.id)}
+                                            className="text-xs text-blue-600 hover:text-blue-800 font-bold flex items-center gap-1 transition-colors"
+                                        >
+                                            <MessageSquare className="h-3 w-3" />
+                                            Phản hồi yêu cầu này
+                                        </button>
+                                    ) : (
+                                        <div className="animate-in fade-in slide-in-from-top-1 duration-200">
+                                            <div className="flex gap-2">
+                                                <input
+                                                    type="text"
+                                                    autoFocus
+                                                    value={newComment}
+                                                    onChange={(e) => setNewComment(e.target.value)}
+                                                    placeholder="Nhập nội dung phản hồi..."
+                                                    className="flex-1 px-3 py-2 text-sm border border-blue-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                                                    onKeyDown={(e) => e.key === 'Enter' && handleSubmitComment()}
+                                                />
+                                                <button
+                                                    onClick={handleSubmitComment}
+                                                    disabled={!newComment.trim()}
+                                                    className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg disabled:opacity-50 shadow-sm"
+                                                >
+                                                    <Send className="h-4 w-4" />
+                                                </button>
+                                                <button
+                                                    onClick={() => { setReplyingToId(null); setNewComment(''); }}
+                                                    className="px-2 py-2 text-gray-400 hover:bg-gray-100 rounded-lg"
+                                                >
+                                                    <X className="h-4 w-4" />
+                                                </button>
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                ))
             )}
         </div>
     );

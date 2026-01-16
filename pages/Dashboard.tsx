@@ -1,4 +1,5 @@
 import React, { useEffect } from 'react';
+import useMobile from '../hooks/useMobile';
 import { useNavigate } from 'react-router-dom';
 import { DASHBOARD_CARDS } from '../constants';
 import { MOCK_CLASSES } from '../data/mockData';
@@ -27,6 +28,7 @@ const Dashboard: React.FC = () => {
   const { user, isAuthenticated } = useAuth();
   const { currentSchoolYear, setCurrentSchoolYear, schoolYears, createNewSchoolYear } = useSchoolYear();
   const [classes, setClasses] = React.useState<any[]>([]);
+  const isMobile = useMobile();
 
   // Function to handle creating a new school year
   const handleCreateYear = async () => {
@@ -156,30 +158,39 @@ const Dashboard: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-gray-50 pb-20">
-      {/* Welcome Section */}
-      <div className="bg-white border-b border-gray-200 pt-8 pb-8 mb-8">
+      {/* Welcome Section - Mobile optimized */}
+      <div className={`bg-white border-b border-gray-200 ${isMobile ? 'pt-4 pb-4 mb-4' : 'pt-8 pb-8 mb-8'}`}>
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-            <div>
-              <div className="flex items-center gap-3 mb-2">
-                <LayoutGrid className="h-5 w-5 text-yellow-500" />
-                <span className="text-sm font-semibold text-yellow-600 uppercase tracking-wider">Bảng điều khiển quản trị</span>
-              </div>
-              <h2 className="text-3xl md:text-4xl font-bold text-gray-900">
-                Xin chào cô: {user.fullName}
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+            <div className="flex-1 min-w-0">
+              {/* Label - hidden on mobile */}
+              {!isMobile && (
+                <div className="flex items-center gap-3 mb-2">
+                  <LayoutGrid className="h-5 w-5 text-yellow-500" />
+                  <span className="text-sm font-semibold text-yellow-600 uppercase tracking-wider">Bảng điều khiển quản trị</span>
+                </div>
+              )}
+              {/* Greeting */}
+              <h2 className={`${isMobile ? 'text-xl' : 'text-3xl md:text-4xl'} font-bold text-gray-900 truncate`}>
+                {isMobile ? `Chào cô ${user.fullName?.split(' ').pop()}` : `Xin chào cô: ${user.fullName}`}
               </h2>
-              <p className="text-gray-500 mt-1">
-                Vai trò: <span className="font-medium text-gray-800">{user.roleLabel}</span> - <span className="font-medium text-gray-800">{user.group}</span>
+              {/* Role - compact on mobile */}
+              <p className={`text-gray-500 ${isMobile ? 'text-xs mt-0.5' : 'mt-1'}`}>
+                {isMobile ? (
+                  <span className="font-medium text-gray-700">{user.roleLabel}</span>
+                ) : (
+                  <>Vai trò: <span className="font-medium text-gray-800">{user.roleLabel}</span> - <span className="font-medium text-gray-800">{user.group}</span></>
+                )}
               </p>
             </div>
 
-            {/* School Year Selector */}
-            <div className="flex items-center gap-2 bg-gray-50 p-2 rounded-lg border border-gray-200">
-              <span className="text-sm font-medium text-gray-600 whitespace-nowrap px-2">Năm học:</span>
+            {/* School Year Selector - Compact on mobile */}
+            <div className={`flex items-center gap-2 bg-gray-50 ${isMobile ? 'p-1.5' : 'p-2'} rounded-lg border border-gray-200 flex-shrink-0`}>
+              {!isMobile && <span className="text-sm font-medium text-gray-600 whitespace-nowrap px-2">Năm học:</span>}
               <select
                 value={currentSchoolYear}
                 onChange={(e) => setCurrentSchoolYear(e.target.value)}
-                className="form-select text-sm font-bold text-gray-800 bg-white border-gray-300 rounded-md shadow-sm focus:border-blue-500 focus:ring-blue-500 py-1.5 pl-3 pr-8"
+                className={`form-select ${isMobile ? 'text-xs py-1 pl-2 pr-6' : 'text-sm py-1.5 pl-3 pr-8'} font-bold text-gray-800 bg-white border-gray-300 rounded-md shadow-sm focus:border-blue-500 focus:ring-blue-500`}
               >
                 {schoolYears.map(year => (
                   <option key={year} value={year}>{year}</option>
@@ -189,10 +200,10 @@ const Dashboard: React.FC = () => {
               {user.role === 'admin' && (
                 <button
                   onClick={handleCreateYear}
-                  className="ml-2 p-1.5 text-blue-600 hover:bg-blue-100 rounded-md transition-colors"
+                  className={`${isMobile ? 'p-1' : 'ml-2 p-1.5'} text-blue-600 hover:bg-blue-100 rounded-md transition-colors`}
                   title="Khởi tạo năm học mới"
                 >
-                  <FolderOpen className="h-4 w-4" />
+                  <FolderOpen className={`${isMobile ? 'h-3.5 w-3.5' : 'h-4 w-4'}`} />
                 </button>
               )}
             </div>
@@ -202,57 +213,59 @@ const Dashboard: React.FC = () => {
 
       {/* Card Grid */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-6 xl:gap-8">
+        <div className={`grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 ${isMobile ? 'gap-3' : 'gap-6 xl:gap-8'}`}>
 
           {/* --- 1. QUẢN LÝ VĂN BẢN CHUNG (Everyone sees this) --- */}
-          <div className="group relative overflow-hidden rounded-2xl border border-blue-100 bg-white shadow-lg transition-all duration-500 ease-out hover:-translate-y-1 hover:shadow-xl hover:shadow-blue-200 hover:border-blue-300 flex flex-col">
+          <div className={`group relative overflow-hidden ${isMobile ? 'rounded-xl' : 'rounded-2xl'} border border-blue-100 bg-white shadow-lg transition-all duration-500 ease-out hover:-translate-y-1 hover:shadow-xl hover:shadow-blue-200 hover:border-blue-300 flex flex-col`}>
             <div className="absolute -right-10 -top-10 h-40 w-40 rounded-full bg-gradient-to-br from-blue-50 to-indigo-100 blur-3xl opacity-50"></div>
 
-            <div className="p-8 pb-4 relative z-10">
-              <div className="mb-4 inline-flex h-14 w-14 items-center justify-center rounded-xl bg-gradient-to-br from-blue-50 to-blue-100 text-blue-600 shadow-sm group-hover:scale-110 transition-transform duration-500">
-                <FolderOpen className="h-7 w-7" />
+            <div className={`${isMobile ? 'p-4 pb-2' : 'p-8 pb-4'} relative z-10`}>
+              <div className={`${isMobile ? 'mb-2 h-10 w-10' : 'mb-4 h-14 w-14'} inline-flex items-center justify-center rounded-xl bg-gradient-to-br from-blue-50 to-blue-100 text-blue-600 shadow-sm group-hover:scale-110 transition-transform duration-500`}>
+                <FolderOpen className={`${isMobile ? 'h-5 w-5' : 'h-7 w-7'}`} />
               </div>
-              <h3 className="mb-2 text-2xl font-bold text-gray-800 tracking-tight group-hover:text-blue-700 transition-colors">
+              <h3 className={`${isMobile ? 'mb-1 text-base' : 'mb-2 text-2xl'} font-bold text-gray-800 tracking-tight group-hover:text-blue-700 transition-colors`}>
                 QUẢN LÝ VĂN BẢN CHUNG
               </h3>
-              <p className="text-gray-500 leading-relaxed text-sm">
-                Lưu trữ và quản lý tập trung các văn bản hành chính đi và đến.
-              </p>
+              {!isMobile && (
+                <p className="text-gray-500 leading-relaxed text-sm">
+                  Lưu trữ và quản lý tập trung các văn bản hành chính đi và đến.
+                </p>
+              )}
             </div>
 
-            <div className="flex-1 grid grid-cols-1 sm:grid-cols-2 gap-px bg-gray-100 border-t border-gray-100 mt-2">
+            <div className={`flex-1 grid grid-cols-2 gap-px bg-gray-100 border-t border-gray-100 ${isMobile ? 'mt-1' : 'mt-2'}`}>
               <div
                 onClick={() => navigate('/van-ban-chi-dao')}
-                className="bg-white p-6 cursor-pointer hover:bg-blue-50/50 transition-colors group/item relative"
+                className={`bg-white ${isMobile ? 'p-3' : 'p-6'} cursor-pointer hover:bg-blue-50/50 transition-colors group/item relative`}
               >
-                <div className="flex items-center justify-between mb-3">
-                  <div className="p-2 bg-blue-100 text-blue-600 rounded-lg">
-                    <Landmark className="h-6 w-6" />
+                <div className={`flex items-center justify-between ${isMobile ? 'mb-1.5' : 'mb-3'}`}>
+                  <div className={`${isMobile ? 'p-1.5' : 'p-2'} bg-blue-100 text-blue-600 rounded-lg`}>
+                    <Landmark className={`${isMobile ? 'h-4 w-4' : 'h-6 w-6'}`} />
                   </div>
-                  <ArrowRight className="h-4 w-4 text-blue-400 opacity-0 -translate-x-2 group-hover/item:opacity-100 group-hover/item:translate-x-0 transition-all" />
+                  {!isMobile && <ArrowRight className="h-4 w-4 text-blue-400 opacity-0 -translate-x-2 group-hover/item:opacity-100 group-hover/item:translate-x-0 transition-all" />}
                 </div>
-                <h4 className="font-bold text-gray-800 mb-1 group-hover/item:text-blue-700">Văn bản Cấp trên</h4>
-                <div className="flex flex-wrap gap-1">
-                  <span className="text-[10px] font-medium px-1.5 py-0.5 bg-gray-100 text-gray-500 rounded border border-gray-200">Sở/Bộ GD</span>
-                  <span className="text-[10px] font-medium px-1.5 py-0.5 bg-gray-100 text-gray-500 rounded border border-gray-200">UBND</span>
+                <h4 className={`font-bold text-gray-800 ${isMobile ? 'text-xs mb-0.5' : 'mb-1'} group-hover/item:text-blue-700`}>Văn bản Cấp trên</h4>
+                <div className="flex flex-wrap gap-0.5">
+                  <span className={`${isMobile ? 'text-[8px] px-1 py-0' : 'text-[10px] px-1.5 py-0.5'} font-medium bg-gray-100 text-gray-500 rounded border border-gray-200`}>Sở/Bộ GD</span>
+                  <span className={`${isMobile ? 'text-[8px] px-1 py-0' : 'text-[10px] px-1.5 py-0.5'} font-medium bg-gray-100 text-gray-500 rounded border border-gray-200`}>UBND</span>
                 </div>
               </div>
 
               <div
                 onClick={() => navigate('/van-ban-truong')}
-                className="bg-white p-6 cursor-pointer hover:bg-emerald-50/50 transition-colors group/item relative"
+                className={`bg-white ${isMobile ? 'p-3' : 'p-6'} cursor-pointer hover:bg-emerald-50/50 transition-colors group/item relative`}
               >
-                <div className="flex items-center justify-between mb-3">
-                  <div className="p-2 bg-emerald-100 text-emerald-600 rounded-lg">
-                    <School className="h-6 w-6" />
+                <div className={`flex items-center justify-between ${isMobile ? 'mb-1.5' : 'mb-3'}`}>
+                  <div className={`${isMobile ? 'p-1.5' : 'p-2'} bg-emerald-100 text-emerald-600 rounded-lg`}>
+                    <School className={`${isMobile ? 'h-4 w-4' : 'h-6 w-6'}`} />
                   </div>
-                  <ArrowRight className="h-4 w-4 text-emerald-400 opacity-0 -translate-x-2 group-hover/item:opacity-100 group-hover/item:translate-x-0 transition-all" />
+                  {!isMobile && <ArrowRight className="h-4 w-4 text-emerald-400 opacity-0 -translate-x-2 group-hover/item:opacity-100 group-hover/item:translate-x-0 transition-all" />}
                 </div>
-                <h4 className="font-bold text-gray-800 mb-1 group-hover/item:text-emerald-700">Văn bản Nội bộ</h4>
-                <div className="flex flex-wrap gap-1">
-                  <span className="text-[10px] font-medium px-1.5 py-0.5 bg-gray-100 text-gray-500 rounded border border-gray-200">Kế hoạch</span>
-                  <span className="text-[10px] font-medium px-1.5 py-0.5 bg-gray-100 text-gray-500 rounded border border-gray-200">Quyết định</span>
-                  <span className="text-[10px] font-medium px-1.5 py-0.5 bg-gray-100 text-gray-500 rounded border border-gray-200">Báo cáo</span>
+                <h4 className={`font-bold text-gray-800 ${isMobile ? 'text-xs mb-0.5' : 'mb-1'} group-hover/item:text-emerald-700`}>Văn bản Nội bộ</h4>
+                <div className="flex flex-wrap gap-0.5">
+                  <span className={`${isMobile ? 'text-[8px] px-1 py-0' : 'text-[10px] px-1.5 py-0.5'} font-medium bg-gray-100 text-gray-500 rounded border border-gray-200`}>Kế hoạch</span>
+                  <span className={`${isMobile ? 'text-[8px] px-1 py-0' : 'text-[10px] px-1.5 py-0.5'} font-medium bg-gray-100 text-gray-500 rounded border border-gray-200`}>Quyết định</span>
+                  <span className={`${isMobile ? 'text-[8px] px-1 py-0' : 'text-[10px] px-1.5 py-0.5'} font-medium bg-gray-100 text-gray-500 rounded border border-gray-200`}>Báo cáo</span>
                 </div>
               </div>
             </div>
@@ -260,48 +273,60 @@ const Dashboard: React.FC = () => {
 
           {/* --- 2. TỔ VĂN PHÒNG (Visible to Admin, Vice Principal & Office Staff) --- */}
           {(user.role === 'admin' || user.role === 'vice_principal' || user.role === 'staff' || user.group === 'Tổ Văn Phòng') && (
-            <div className="group relative overflow-hidden rounded-2xl border border-indigo-100 bg-white shadow-lg transition-all duration-500 ease-out hover:-translate-y-1 hover:shadow-xl hover:shadow-indigo-200 hover:border-indigo-300 flex flex-col">
+            <div className={`group relative overflow-hidden ${isMobile ? 'rounded-xl' : 'rounded-2xl'} border border-indigo-100 bg-white shadow-lg transition-all duration-500 ease-out hover:-translate-y-1 hover:shadow-xl hover:shadow-indigo-200 hover:border-indigo-300 flex flex-col`}>
               <div className="absolute -right-10 -top-10 h-40 w-40 rounded-full bg-gradient-to-br from-indigo-50 to-purple-100 blur-3xl opacity-50 group-hover:opacity-80 transition-opacity"></div>
 
-              <div className="p-8 pb-4 relative z-10">
-                <div className="mb-4 inline-flex h-14 w-14 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-50 to-indigo-100 text-indigo-600 shadow-sm group-hover:scale-110 transition-transform duration-500">
-                  <Briefcase className="h-7 w-7" />
+              {/* Header */}
+              <div className={`${isMobile ? 'p-4 pb-2' : 'p-8 pb-4'} relative z-10`}>
+                <div className={`${isMobile ? 'mb-2 h-10 w-10' : 'mb-4 h-14 w-14'} inline-flex items-center justify-center rounded-xl bg-gradient-to-br from-indigo-50 to-indigo-100 text-indigo-600 shadow-sm group-hover:scale-110 transition-transform duration-500`}>
+                  <Briefcase className={`${isMobile ? 'h-5 w-5' : 'h-7 w-7'}`} />
                 </div>
-                <h3 className="mb-2 text-2xl font-bold text-gray-800 tracking-tight group-hover:text-indigo-700 transition-colors">
+                <h3 className={`${isMobile ? 'mb-1 text-base' : 'mb-2 text-2xl'} font-bold text-gray-800 tracking-tight group-hover:text-indigo-700 transition-colors`}>
                   TỔ VĂN PHÒNG
                 </h3>
-                <p className="text-gray-500 leading-relaxed text-sm">
-                  Quản lý hành chính, nhân sự, tài sản, y tế, thực đơn và các công tác hỗ trợ khác.
-                </p>
+                {!isMobile && (
+                  <p className="text-gray-500 leading-relaxed text-sm">
+                    Quản lý hành chính, nhân sự, tài sản, y tế, thực đơn và các công tác hỗ trợ khác.
+                  </p>
+                )}
               </div>
 
-              <div className="flex-1 flex flex-col sm:flex-row border-t border-indigo-50 mt-4">
-                {/* Block A */}
+              {/* Sub-items - Always side-by-side */}
+              <div className={`flex-1 grid grid-cols-2 gap-px bg-indigo-100/50 border-t border-indigo-50 ${isMobile ? 'mt-1' : 'mt-4'}`}>
+                {/* Block A - Kế hoạch & Báo cáo */}
                 <div
                   onClick={() => handleCardClick('to-van-phong-ke-hoach')}
-                  className="flex-1 p-6 cursor-pointer hover:bg-indigo-50/60 transition-colors border-b sm:border-b-0 sm:border-r border-indigo-50 group/item"
+                  className={`bg-white ${isMobile ? 'p-3' : 'p-6'} cursor-pointer hover:bg-indigo-50/60 transition-colors group/item`}
                 >
-                  <div className="flex items-start justify-between mb-3">
-                    <div className="p-2 bg-indigo-100 text-indigo-600 rounded-lg shadow-sm">
-                      <FileText className="h-5 w-5" />
+                  <div className={`${isMobile ? 'mb-2' : 'mb-3'}`}>
+                    <div className={`${isMobile ? 'p-1.5' : 'p-2'} bg-indigo-100 text-indigo-600 rounded-lg shadow-sm inline-block`}>
+                      <FileText className={`${isMobile ? 'h-4 w-4' : 'h-5 w-5'}`} />
                     </div>
                   </div>
-                  <h4 className="text-sm font-bold text-gray-800 mb-1 group-hover/item:text-indigo-700">KẾ HOẠCH & BÁO CÁO</h4>
-                  <p className="text-xs text-gray-500 mb-3 line-clamp-2">Kế hoạch tài chính, Y tế, Hoạt động chung</p>
+                  <h4 className={`${isMobile ? 'text-xs' : 'text-sm'} font-bold text-gray-800 mb-0.5 group-hover/item:text-indigo-700`}>
+                    {isMobile ? 'KẾ HOẠCH' : 'KẾ HOẠCH & BÁO CÁO'}
+                  </h4>
+                  <p className={`${isMobile ? 'text-[10px]' : 'text-xs'} text-gray-500 line-clamp-2`}>
+                    {isMobile ? 'Tài chính, Y tế' : 'Kế hoạch tài chính, Y tế, Hoạt động chung'}
+                  </p>
                 </div>
 
-                {/* Block B */}
+                {/* Block B - Thực đơn & Bán trú */}
                 <div
                   onClick={() => handleCardClick('to-van-phong-thuc-don')}
-                  className="flex-1 p-6 cursor-pointer hover:bg-purple-50/60 transition-colors group/item"
+                  className={`bg-white ${isMobile ? 'p-3' : 'p-6'} cursor-pointer hover:bg-purple-50/60 transition-colors group/item`}
                 >
-                  <div className="flex items-start justify-between mb-3">
-                    <div className="p-2 bg-purple-100 text-purple-600 rounded-lg shadow-sm">
-                      <Utensils className="h-5 w-5" />
+                  <div className={`${isMobile ? 'mb-2' : 'mb-3'}`}>
+                    <div className={`${isMobile ? 'p-1.5' : 'p-2'} bg-purple-100 text-purple-600 rounded-lg shadow-sm inline-block`}>
+                      <Utensils className={`${isMobile ? 'h-4 w-4' : 'h-5 w-5'}`} />
                     </div>
                   </div>
-                  <h4 className="text-sm font-bold text-gray-800 mb-1 group-hover/item:text-purple-700">THỰC ĐƠN & BÁN TRÚ</h4>
-                  <p className="text-xs text-gray-500 mb-3 line-clamp-2">Quản lý thực đơn tuần và Vệ sinh ATTP</p>
+                  <h4 className={`${isMobile ? 'text-xs' : 'text-sm'} font-bold text-gray-800 mb-0.5 group-hover/item:text-purple-700`}>
+                    {isMobile ? 'THỰC ĐƠN' : 'THỰC ĐƠN & BÁN TRÚ'}
+                  </h4>
+                  <p className={`${isMobile ? 'text-[10px]' : 'text-xs'} text-gray-500 line-clamp-2`}>
+                    {isMobile ? 'Vệ sinh ATTP' : 'Quản lý thực đơn tuần và Vệ sinh ATTP'}
+                  </p>
                 </div>
               </div>
             </div>
@@ -309,49 +334,57 @@ const Dashboard: React.FC = () => {
 
           {/* --- 3. TỔ CHUYÊN MÔN (Visible to Admin, Vice Principal, HeadTeacher, Teacher) --- */}
           {(user.role === 'admin' || user.role === 'vice_principal' || user.role === 'head_teacher' || user.role === 'vice_head_teacher' || user.role === 'teacher') && (
-            <div className="group relative overflow-hidden rounded-2xl border border-amber-100 bg-white shadow-lg transition-all duration-500 ease-out hover:-translate-y-1 hover:shadow-xl hover:shadow-amber-200 hover:border-amber-300 flex flex-col">
+            <div className={`group relative overflow-hidden ${isMobile ? 'rounded-xl' : 'rounded-2xl'} border border-amber-100 bg-white shadow-lg transition-all duration-500 ease-out hover:-translate-y-1 hover:shadow-xl hover:shadow-amber-200 hover:border-amber-300 flex flex-col`}>
               <div className="absolute -right-10 -top-10 h-40 w-40 rounded-full bg-gradient-to-br from-amber-50 to-orange-100 blur-3xl opacity-50 group-hover:opacity-80 transition-opacity"></div>
 
-              <div className="p-8 pb-2 relative z-10">
-                <div className="mb-4 inline-flex h-14 w-14 items-center justify-center rounded-xl bg-gradient-to-br from-amber-50 to-amber-100 text-amber-600 shadow-sm group-hover:scale-110 transition-transform duration-500">
-                  <GraduationCap className="h-8 w-8" />
+              {/* Header */}
+              <div className={`${isMobile ? 'p-4 pb-2' : 'p-8 pb-2'} relative z-10`}>
+                <div className={`${isMobile ? 'mb-2 h-10 w-10' : 'mb-4 h-14 w-14'} inline-flex items-center justify-center rounded-xl bg-gradient-to-br from-amber-50 to-amber-100 text-amber-600 shadow-sm group-hover:scale-110 transition-transform duration-500`}>
+                  <GraduationCap className={`${isMobile ? 'h-5 w-5' : 'h-8 w-8'}`} />
                 </div>
-                <h3 className="mb-2 text-2xl font-bold text-gray-800 tracking-tight group-hover:text-amber-700 transition-colors">
+                <h3 className={`${isMobile ? 'mb-1 text-base' : 'mb-2 text-2xl'} font-bold text-gray-800 tracking-tight group-hover:text-amber-700 transition-colors`}>
                   TỔ CHUYÊN MÔN
                 </h3>
-                <p className="text-gray-500 leading-relaxed text-sm mb-4">
-                  Kế hoạch giảng dạy, bài soạn, chuyên đề, dữ liệu các lớp và tài liệu tham khảo.
-                </p>
+                {!isMobile && (
+                  <p className="text-gray-500 leading-relaxed text-sm mb-4">
+                    Kế hoạch giảng dạy, bài soạn, chuyên đề, dữ liệu các lớp và tài liệu tham khảo.
+                  </p>
+                )}
               </div>
 
               {/* Section 1: Organization Plans */}
-              <div className="px-6 pb-4 relative z-10">
+              <div className={`${isMobile ? 'px-4 pb-2' : 'px-6 pb-4'} relative z-10`}>
                 <div
                   onClick={() => handleCardClick('to-chuyen-mon-ke-hoach')}
-                  className="flex items-center justify-between p-3 rounded-xl bg-amber-50 border border-amber-100 cursor-pointer hover:bg-amber-100 transition-colors group/plan"
+                  className={`flex items-center justify-between ${isMobile ? 'p-2' : 'p-3'} rounded-xl bg-amber-50 border border-amber-100 cursor-pointer hover:bg-amber-100 transition-colors group/plan`}
                 >
-                  <div className="flex items-center gap-3">
-                    <div className="p-2 bg-white rounded-lg text-amber-600 shadow-sm">
-                      <BookOpen className="h-5 w-5" />
+                  <div className="flex items-center gap-2">
+                    <div className={`${isMobile ? 'p-1.5' : 'p-2'} bg-white rounded-lg text-amber-600 shadow-sm`}>
+                      <BookOpen className={`${isMobile ? 'h-4 w-4' : 'h-5 w-5'}`} />
                     </div>
                     <div>
-                      <h4 className="text-sm font-bold text-gray-800 group-hover/plan:text-amber-700">Kế hoạch Tổ & Biên bản</h4>
+                      <h4 className={`${isMobile ? 'text-xs' : 'text-sm'} font-bold text-gray-800 group-hover/plan:text-amber-700`}>
+                        {isMobile ? 'Kế hoạch Tổ' : 'Kế hoạch Tổ & Biên bản'}
+                      </h4>
                     </div>
                   </div>
-                  <div className="text-xs font-bold text-amber-600 underline opacity-0 group-hover/plan:opacity-100 transition-opacity">
-                    Xem chi tiết
-                  </div>
+                  {!isMobile && (
+                    <div className="text-xs font-bold text-amber-600 underline opacity-0 group-hover/plan:opacity-100 transition-opacity">
+                      Xem chi tiết
+                    </div>
+                  )}
                 </div>
               </div>
 
-              <div className="flex-1 bg-gray-50/50 border-t border-amber-100 p-6 pt-4">
-                <div className="mb-4">
-                  <h4 className="text-sm font-bold text-gray-700 uppercase tracking-wider border-l-4 border-amber-400 pl-3">
+              {/* Classes Grid */}
+              <div className={`flex-1 bg-gray-50/50 border-t border-amber-100 ${isMobile ? 'p-4 pt-3' : 'p-6 pt-4'}`}>
+                <div className={`${isMobile ? 'mb-2' : 'mb-4'}`}>
+                  <h4 className={`${isMobile ? 'text-xs' : 'text-sm'} font-bold text-gray-700 uppercase tracking-wider border-l-4 border-amber-400 pl-2`}>
                     LỚP HỌC CỦA TÔI
                   </h4>
                 </div>
 
-                <div className="grid grid-cols-3 gap-2">
+                <div className={`grid ${isMobile ? 'grid-cols-4 gap-1.5' : 'grid-cols-3 gap-2'}`}>
                   {classes.map((cls) => {
                     // Filter classes for Teacher role
                     if (user.role === 'teacher') {
@@ -367,11 +400,11 @@ const Dashboard: React.FC = () => {
                       <button
                         key={cls.id}
                         onClick={() => handleCardClick(`class-${cls.id}`)}
-                        className="relative group/btn flex flex-col items-center justify-center py-2 px-1 bg-white border border-gray-200 rounded-lg shadow-sm hover:border-amber-300 hover:shadow-md hover:bg-amber-50 transition-all"
+                        className={`relative group/btn flex flex-col items-center justify-center ${isMobile ? 'py-1.5 px-1' : 'py-2 px-1'} bg-white border border-gray-200 rounded-lg shadow-sm hover:border-amber-300 hover:shadow-md hover:bg-amber-50 transition-all`}
                       >
-                        <span className="text-xs font-bold text-gray-700 group-hover/btn:text-amber-800">{cls.name}</span>
+                        <span className={`${isMobile ? 'text-[10px]' : 'text-xs'} font-bold text-gray-700 group-hover/btn:text-amber-800`}>{cls.name}</span>
                         {cls.newFiles > 0 && (
-                          <span className="absolute -top-1 -right-1 h-3 w-3 bg-red-500 rounded-full border-2 border-white shadow-sm animate-pulse"></span>
+                          <span className="absolute -top-1 -right-1 h-2.5 w-2.5 bg-red-500 rounded-full border-2 border-white shadow-sm animate-pulse"></span>
                         )}
                       </button>
                     );

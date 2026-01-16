@@ -336,9 +336,9 @@ window.RanutsGlue = (function () {
 
     // --- onlyoffice-editor (Simplified) ---
     async function createEditorInstance(config) {
-        const { fileName, fileType, binData, media, mode = 'edit', canSave = true } = config;
+        const { fileName, fileType, binData, media, mode = 'edit', canSave = true, type = 'desktop' } = config;
         const isEditMode = mode === 'edit';
-        console.log('[Editor] Creating instance, mode:', mode, 'canSave:', canSave);
+        console.log('[Editor] Creating instance, mode:', mode, 'canSave:', canSave, 'type:', type);
 
         if (window.editor) {
             window.editor.destroyEditor();
@@ -359,6 +359,7 @@ window.RanutsGlue = (function () {
         }
 
         window.editor = new window.DocsAPI.DocEditor('iframe', {
+            type: type, // mobile | desktop | embedded
             document: {
                 title: fileName,
                 url: fileName,
@@ -684,12 +685,12 @@ window.RanutsGlue = (function () {
     }, true);
 
     // --- Main init function ---
-    async function init(fileUrl, fileName, mode = 'edit', canSave = true) {
+    async function init(fileUrl, fileName, mode = 'edit', canSave = true, type = 'desktop') {
         try {
             window.currentFileName = fileName;
             window.currentMode = mode;
             window.canSave = canSave;
-            console.log('[Glue] Mode:', mode, 'CanSave:', canSave);
+            console.log('[Glue] Mode:', mode, 'CanSave:', canSave, 'Type:', type);
 
             // Load file
             console.log("Fetching file from:", fileUrl);
@@ -703,7 +704,7 @@ window.RanutsGlue = (function () {
             const file = new File([blob], fileName, { type: blob.type });
 
             // Convert
-            const { bin, type, media } = await x2tConverter.convertDocument(file);
+            const { bin, type: docType, media } = await x2tConverter.convertDocument(file);
 
             // Init Editor
             await createEditorInstance({
@@ -712,7 +713,8 @@ window.RanutsGlue = (function () {
                 binData: bin,
                 media: media,
                 mode: mode,
-                canSave: canSave
+                canSave: canSave,
+                type: type // Pass type
             });
         } catch (error) {
             console.error("Glue Init Error:", error);

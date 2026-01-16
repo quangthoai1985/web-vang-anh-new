@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import useMobile from '../hooks/useMobile';
 import { useNavigate } from 'react-router-dom';
 import {
   Search,
@@ -46,6 +47,7 @@ const SchoolDocuments: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [activeTab, setActiveTab] = useState<string>('Tất cả');
   const { user } = useAuth();
+  const isMobile = useMobile();
   // Only users with explicit 'manage_documents' permission can manage
   const canManageDocuments = user?.permissions?.includes('manage_documents');
 
@@ -220,32 +222,34 @@ const SchoolDocuments: React.FC = () => {
 
       {/* Header Area */}
       <div className="bg-white border-b border-gray-200">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-            <div>
-              <button
-                onClick={() => navigate('/')}
-                className="flex items-center text-sm text-gray-500 hover:text-emerald-600 transition-colors mb-2"
-              >
-                <ArrowLeft className="h-4 w-4 mr-1" /> Quay lại Dashboard
-              </button>
+        <div className={`max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 ${isMobile ? 'py-4' : 'py-6'}`}>
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+            <div className="min-w-0">
+              {!isMobile && (
+                <button
+                  onClick={() => navigate('/')}
+                  className="flex items-center text-sm text-gray-500 hover:text-emerald-600 transition-colors mb-2"
+                >
+                  <ArrowLeft className="h-4 w-4 mr-1" /> Quay lại Dashboard
+                </button>
+              )}
               <div
-                className="flex items-center gap-3 cursor-pointer hover:opacity-80 transition-opacity"
+                className="flex items-center gap-2 cursor-pointer hover:opacity-80 transition-opacity"
                 onClick={() => navigate('/')}
               >
-                <div className="p-2 bg-emerald-100 rounded-lg">
-                  <Building2 className="h-6 w-6 text-emerald-600" />
+                <div className={`${isMobile ? 'p-1.5' : 'p-2'} bg-emerald-100 rounded-lg`}>
+                  <Building2 className={`${isMobile ? 'h-5 w-5' : 'h-6 w-6'} text-emerald-600`} />
                 </div>
-                <h1 className="text-2xl font-bold text-gray-900 uppercase">VĂN BẢN CỦA TRƯỜNG</h1>
+                <h1 className={`${isMobile ? 'text-lg' : 'text-2xl'} font-bold text-gray-900 uppercase`}>VĂN BẢN CỦA TRƯỜNG</h1>
               </div>
             </div>
             {canManageDocuments && (
               <button
                 onClick={handleOpenAdd}
-                className="flex items-center gap-2 bg-emerald-600 text-white px-4 py-2 rounded-lg hover:bg-emerald-700 transition-colors shadow-md"
+                className={`flex items-center gap-2 bg-emerald-600 text-white ${isMobile ? 'px-3 py-2 text-sm' : 'px-4 py-2'} rounded-lg hover:bg-emerald-700 transition-colors shadow-md flex-shrink-0`}
               >
-                <Plus className="h-5 w-5" />
-                <span>Thêm văn bản mới</span>
+                <Plus className={`${isMobile ? 'h-4 w-4' : 'h-5 w-5'}`} />
+                <span>{isMobile ? 'Thêm mới' : 'Thêm văn bản mới'}</span>
               </button>
             )}
           </div>
@@ -290,127 +294,213 @@ const SchoolDocuments: React.FC = () => {
       </div>
 
       {/* List View */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <div className={`max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 ${isMobile ? 'py-4' : 'py-8'}`}>
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th scope="col" className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider w-1/2">
-                    Trích yếu văn bản
-                  </th>
-                  <th scope="col" className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                    Thông tin
-                  </th>
-                  <th scope="col" className="px-6 py-4 text-center text-xs font-semibold text-gray-500 uppercase tracking-wider w-32">
-                    Thao tác
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {filteredDocs.length > 0 ? (
-                  filteredDocs.map((doc) => (
-                    <tr
-                      key={doc.id}
-                      className="hover:bg-emerald-50/50 transition-colors cursor-pointer group"
-                      onClick={() => handleOpenView(doc)}
+
+          {/* Mobile: Card Layout */}
+          {isMobile ? (
+            <div className="divide-y divide-gray-100">
+              {filteredDocs.length > 0 ? (
+                filteredDocs.map((doc) => (
+                  <div
+                    key={doc.id}
+                    onClick={() => handleOpenView(doc)}
+                    className="p-4 hover:bg-emerald-50/50 transition-colors cursor-pointer active:bg-emerald-100"
+                  >
+                    {/* Row 1: Title */}
+                    <div className="flex items-start gap-3">
+                      <div className="p-1.5 rounded-lg bg-gray-100 text-gray-500 flex-shrink-0">
+                        <FileText className="h-4 w-4" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-semibold text-gray-900 line-clamp-2">
+                          {doc.trichYeu}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Row 2: Badges + Meta */}
+                    <div className="flex flex-wrap items-center gap-1.5 mt-2 ml-9">
+                      <span className="text-[10px] font-mono bg-gray-100 px-1.5 py-0.5 rounded border border-gray-200 text-gray-600">
+                        {doc.soKyHieu}
+                      </span>
+                      <Badge colorClass={getTypeBadgeColor(doc.loaiVanBan)}>{doc.loaiVanBan}</Badge>
+                      <span className="flex items-center gap-0.5 text-[10px] text-gray-400">
+                        <Calendar className="h-2.5 w-2.5" />
+                        {new Date(doc.ngayBanHanh).toLocaleDateString('vi-VN')}
+                      </span>
+                    </div>
+
+                    {/* Row 3: Actions */}
+                    <div
+                      className="flex items-center gap-2 mt-3 ml-9"
+                      onClick={(e) => e.stopPropagation()}
                     >
-                      <td className="px-6 py-4">
-                        <div className="flex items-start gap-3">
-                          <div className="p-2 rounded-lg bg-gray-100 text-gray-500 group-hover:bg-white group-hover:text-emerald-600 transition-colors">
-                            <FileText className="h-5 w-5" />
-                          </div>
-                          <div>
-                            <p className="text-sm font-semibold text-gray-900 line-clamp-2 group-hover:text-emerald-700 transition-colors">
-                              {doc.trichYeu}
-                            </p>
-                            {doc.tomTatNoiDung && (
-                              <p className="mt-1 text-xs text-gray-500 line-clamp-1">
-                                {doc.tomTatNoiDung}
+                      <button
+                        onClick={() => handleOpenView(doc)}
+                        className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-emerald-700 bg-emerald-50 rounded-lg hover:bg-emerald-100 transition-colors"
+                      >
+                        <Eye className="h-3.5 w-3.5" /> Xem
+                      </button>
+                      <button
+                        onClick={() => handleDownload(doc)}
+                        className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+                      >
+                        <Download className="h-3.5 w-3.5" /> Tải
+                      </button>
+                      {canManageDocuments && (
+                        <>
+                          <button
+                            onClick={() => handleOpenEdit(doc)}
+                            className="p-1.5 text-amber-600 bg-amber-50 rounded-lg hover:bg-amber-100 transition-colors"
+                          >
+                            <Edit className="h-3.5 w-3.5" />
+                          </button>
+                          <button
+                            onClick={() => openDeleteModal(doc)}
+                            className="p-1.5 text-red-600 bg-red-50 rounded-lg hover:bg-red-100 transition-colors"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <div className="py-12 text-center text-gray-500">
+                  <FileText className="h-10 w-10 text-gray-300 mx-auto mb-3" />
+                  <p className="text-sm font-medium">Không tìm thấy văn bản nào</p>
+                  <p className="text-xs mt-1">Thử thay đổi bộ lọc</p>
+                </div>
+              )}
+            </div>
+          ) : (
+            /* Desktop: Table Layout */
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th scope="col" className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider w-1/2">
+                      Trích yếu văn bản
+                    </th>
+                    <th scope="col" className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                      Thông tin
+                    </th>
+                    <th scope="col" className="px-6 py-4 text-center text-xs font-semibold text-gray-500 uppercase tracking-wider w-32">
+                      Thao tác
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {filteredDocs.length > 0 ? (
+                    filteredDocs.map((doc) => (
+                      <tr
+                        key={doc.id}
+                        className="hover:bg-emerald-50/50 transition-colors cursor-pointer group"
+                        onClick={() => handleOpenView(doc)}
+                      >
+                        <td className="px-6 py-4">
+                          <div className="flex items-start gap-3">
+                            <div className="p-2 rounded-lg bg-gray-100 text-gray-500 group-hover:bg-white group-hover:text-emerald-600 transition-colors">
+                              <FileText className="h-5 w-5" />
+                            </div>
+                            <div>
+                              <p className="text-sm font-semibold text-gray-900 line-clamp-2 group-hover:text-emerald-700 transition-colors">
+                                {doc.trichYeu}
                               </p>
+                              {doc.tomTatNoiDung && (
+                                <p className="mt-1 text-xs text-gray-500 line-clamp-1">
+                                  {doc.tomTatNoiDung}
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="flex flex-col gap-2">
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs font-mono bg-gray-100 px-2 py-0.5 rounded border border-gray-200 text-gray-600">
+                                {doc.soKyHieu}
+                              </span>
+                              <Badge colorClass={getTypeBadgeColor(doc.loaiVanBan)}>{doc.loaiVanBan}</Badge>
+                            </div>
+                            <div className="flex items-center gap-4 text-xs text-gray-500">
+                              <div className="flex items-center gap-1">
+                                <Building2 className="h-3 w-3" />
+                                <span>{doc.coQuanBanHanh}</span>
+                              </div>
+                              <div className="flex items-center gap-1">
+                                <Calendar className="h-3 w-3" />
+                                {new Date(doc.ngayBanHanh).toLocaleDateString('vi-VN')}
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-center">
+                          <div className="flex justify-center items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                            <button
+                              onClick={() => handleOpenView(doc)}
+                              className="p-1.5 text-gray-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-full transition-colors"
+                              title="Xem chi tiết"
+                            >
+                              <Eye className="h-4 w-4" />
+                            </button>
+                            <button
+                              onClick={() => handleDownload(doc)}
+                              className="p-1.5 text-gray-400 hover:text-green-600 hover:bg-green-50 rounded-full transition-colors"
+                              title="Tải xuống"
+                            >
+                              <Download className="h-4 w-4" />
+                            </button>
+
+                            {canManageDocuments && (
+                              <>
+                                <button
+                                  onClick={() => handleOpenEdit(doc)}
+                                  className="p-1.5 text-gray-400 hover:text-amber-600 hover:bg-amber-50 rounded-full transition-colors"
+                                  title="Chỉnh sửa"
+                                >
+                                  <Edit className="h-4 w-4" />
+                                </button>
+                                <button
+                                  onClick={() => openDeleteModal(doc)}
+                                  className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-full transition-colors"
+                                  title="Xóa"
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </button>
+                              </>
                             )}
                           </div>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="flex flex-col gap-2">
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs font-mono bg-gray-100 px-2 py-0.5 rounded border border-gray-200 text-gray-600">
-                              {doc.soKyHieu}
-                            </span>
-                            <Badge colorClass={getTypeBadgeColor(doc.loaiVanBan)}>{doc.loaiVanBan}</Badge>
-                          </div>
-                          <div className="flex items-center gap-4 text-xs text-gray-500">
-                            <div className="flex items-center gap-1">
-                              <Building2 className="h-3 w-3" />
-                              <span>{doc.coQuanBanHanh}</span>
-                            </div>
-                            <div className="flex items-center gap-1">
-                              <Calendar className="h-3 w-3" />
-                              {new Date(doc.ngayBanHanh).toLocaleDateString('vi-VN')}
-                            </div>
-                          </div>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-center">
-                        <div className="flex justify-center items-center gap-2" onClick={(e) => e.stopPropagation()}>
-                          <button
-                            onClick={() => handleOpenView(doc)}
-                            className="p-1.5 text-gray-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-full transition-colors"
-                            title="Xem chi tiết"
-                          >
-                            <Eye className="h-4 w-4" />
-                          </button>
-                          <button
-                            onClick={() => handleDownload(doc)}
-                            className="p-1.5 text-gray-400 hover:text-green-600 hover:bg-green-50 rounded-full transition-colors"
-                            title="Tải xuống"
-                          >
-                            <Download className="h-4 w-4" />
-                          </button>
-
-                          {canManageDocuments && (
-                            <>
-                              <button
-                                onClick={() => handleOpenEdit(doc)}
-                                className="p-1.5 text-gray-400 hover:text-amber-600 hover:bg-amber-50 rounded-full transition-colors"
-                                title="Chỉnh sửa"
-                              >
-                                <Edit className="h-4 w-4" />
-                              </button>
-                              <button
-                                onClick={() => openDeleteModal(doc)}
-                                className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-full transition-colors"
-                                title="Xóa"
-                              >
-                                <Trash2 className="h-4 w-4" />
-                              </button>
-                            </>
-                          )}
+                        </td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td colSpan={3} className="px-6 py-12 text-center text-gray-500">
+                        <div className="flex flex-col items-center">
+                          <FileText className="h-12 w-12 text-gray-300 mb-3" />
+                          <p className="text-base font-medium">Không tìm thấy văn bản nào</p>
+                          <p className="text-sm mt-1">Thử thay đổi bộ lọc hoặc từ khóa tìm kiếm</p>
                         </div>
                       </td>
                     </tr>
-                  ))
-                ) : (
-                  <tr>
-                    <td colSpan={3} className="px-6 py-12 text-center text-gray-500">
-                      <div className="flex flex-col items-center">
-                        <FileText className="h-12 w-12 text-gray-300 mb-3" />
-                        <p className="text-base font-medium">Không tìm thấy văn bản nào</p>
-                        <p className="text-sm mt-1">Thử thay đổi bộ lọc hoặc từ khóa tìm kiếm</p>
-                      </div>
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-          <div className="px-6 py-4 bg-gray-50 border-t border-gray-200 flex items-center justify-between text-sm text-gray-500">
-            <span>Hiển thị {filteredDocs.length} văn bản</span>
-            <div className="flex gap-2">
-              <button className="px-3 py-1 border border-gray-300 rounded bg-white disabled:opacity-50" disabled>Trước</button>
-              <button className="px-3 py-1 border border-gray-300 rounded bg-white hover:bg-gray-50">Sau</button>
+                  )}
+                </tbody>
+              </table>
             </div>
+          )}
+
+          {/* Footer */}
+          <div className={`${isMobile ? 'px-4 py-3' : 'px-6 py-4'} bg-gray-50 border-t border-gray-200 flex items-center justify-between text-sm text-gray-500`}>
+            <span className={isMobile ? 'text-xs' : ''}>{filteredDocs.length} văn bản</span>
+            {!isMobile && (
+              <div className="flex gap-2">
+                <button className="px-3 py-1 border border-gray-300 rounded bg-white disabled:opacity-50" disabled>Trước</button>
+                <button className="px-3 py-1 border border-gray-300 rounded bg-white hover:bg-gray-50">Sau</button>
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -448,129 +538,184 @@ const SchoolDocuments: React.FC = () => {
         )
       }
 
-      {/* View Modal */}
+      {/* View Modal - Mobile Optimized */}
       {
         isViewModalOpen && selectedDoc && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
-            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-7xl h-[90vh] overflow-hidden flex flex-col">
-
-              <div className="bg-emerald-600 px-6 py-3 flex justify-between items-center flex-shrink-0 shadow-md z-20">
-                <h3 className="text-white font-semibold text-lg flex items-center gap-2">
-                  <FileText className="h-5 w-5" /> Chi tiết văn bản
-                </h3>
-                <button onClick={() => setIsViewModalOpen(false)} className="text-emerald-100 hover:text-white hover:bg-emerald-700 p-1 rounded-full transition-all">
-                  <X className="h-6 w-6" />
-                </button>
-              </div>
-              <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
-                <div className="w-full lg:w-[35%] flex flex-col border-r border-gray-200 bg-white h-full">
-                  <div className="overflow-y-auto p-6 flex-1">
-                    <div className="mb-6">
-                      <h2 className="text-xl font-bold text-gray-900 mb-2 leading-tight">{selectedDoc.trichYeu}</h2>
-                      <div className="flex flex-wrap gap-2 mt-3">
-                        <Badge colorClass={getTypeBadgeColor(selectedDoc.loaiVanBan)}>{selectedDoc.loaiVanBan}</Badge>
-                        <span className="text-xs text-gray-500 flex items-center gap-1 px-2 py-0.5 bg-gray-100 rounded-full">
-                          <Calendar className="h-3 w-3" /> {new Date(selectedDoc.ngayBanHanh).toLocaleDateString('vi-VN')}
-                        </span>
-                      </div>
-                    </div>
-
-                    <div className="space-y-4 mb-8">
-                      <div className="bg-gray-50 p-4 rounded-lg border border-gray-100">
-                        <div className="grid grid-cols-2 gap-4">
-                          <div>
-                            <p className="text-xs text-gray-400 uppercase font-semibold mb-1">Số / Ký hiệu</p>
-                            <p className="font-mono text-sm text-gray-800 font-medium">{selectedDoc.soKyHieu}</p>
-                          </div>
-                          <div>
-                            <p className="text-xs text-gray-400 uppercase font-semibold mb-1">Ngày ban hành</p>
-                            <p className="text-sm font-medium text-gray-800">{new Date(selectedDoc.ngayBanHanh).toLocaleDateString('vi-VN')}</p>
-                          </div>
-                        </div>
-                      </div>
-
-                      <div>
-                        <p className="text-sm font-semibold text-gray-700 mb-2 flex items-center gap-2">
-                          <Building2 className="h-4 w-4 text-gray-400" /> Đơn vị ban hành
-                        </p>
-                        <p className="text-gray-700 bg-gray-50 p-3 rounded-lg border border-gray-100 text-sm">
-                          {selectedDoc.coQuanBanHanh}
-                        </p>
-                      </div>
-
-                      <div>
-                        <p className="text-sm font-semibold text-gray-700 mb-2">Tóm tắt nội dung</p>
-                        <p className="text-gray-600 text-sm leading-relaxed bg-gray-50 p-4 rounded-lg border border-gray-100 h-auto min-h-[100px]">
-                          {selectedDoc.tomTatNoiDung || "Chưa có tóm tắt nội dung cho văn bản này."}
-                        </p>
-                      </div>
+          <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+            {/* Mobile Layout */}
+            {isMobile ? (
+              <div className="h-full flex flex-col bg-gray-50">
+                {/* Compact Header */}
+                <div className="bg-emerald-600 px-4 py-3 flex items-center gap-3 flex-shrink-0 safe-area-inset-top">
+                  <button
+                    onClick={() => setIsViewModalOpen(false)}
+                    className="p-1.5 -ml-1.5 text-white/80 hover:text-white hover:bg-emerald-700 rounded-full transition-all"
+                  >
+                    <ArrowLeft className="h-5 w-5" />
+                  </button>
+                  <div className="flex-1 min-w-0">
+                    <h3 className="text-white font-semibold text-sm truncate">{selectedDoc.trichYeu}</h3>
+                    <div className="flex items-center gap-2 mt-0.5">
+                      <span className="text-emerald-100 text-[10px] font-mono">{selectedDoc.soKyHieu}</span>
+                      <span className="text-emerald-200 text-[10px]">•</span>
+                      <span className="text-emerald-100 text-[10px]">{new Date(selectedDoc.ngayBanHanh).toLocaleDateString('vi-VN')}</span>
                     </div>
                   </div>
+                </div>
 
-                  <div className="p-4 border-t border-gray-100 bg-gray-50 flex justify-between items-center flex-shrink-0">
-                    <button className="text-sm text-gray-500 hover:text-gray-800 underline">Báo cáo lỗi</button>
-                    <button
-                      onClick={() => handleDownload(selectedDoc)}
-                      className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg shadow-md transition-colors"
-                    >
-                      <Download className="h-4 w-4" /> Tải về máy
+                {/* Document Preview - Full Height */}
+                <div className="flex-1 relative overflow-hidden">
+                  {selectedDoc.fileDinhKemUrl && selectedDoc.fileDinhKemUrl !== '#' ? (
+                    <iframe
+                      src={getPreviewUrl(selectedDoc.fileDinhKemUrl)}
+                      className="w-full h-full bg-white"
+                      title="Document Preview"
+                    />
+                  ) : (
+                    <div className="flex flex-col items-center justify-center h-full text-gray-500 bg-white">
+                      <FileText className="h-16 w-16 mb-4 text-gray-300" />
+                      <p className="text-base font-medium">Không có bản xem trước</p>
+                      <p className="text-sm text-gray-400 mt-1 text-center px-8">Văn bản này chưa có file đính kèm</p>
+                    </div>
+                  )}
+                </div>
+
+                {/* Mobile Bottom Action Bar */}
+                <div className="bg-white border-t border-gray-200 px-4 py-3 flex items-center justify-between gap-3 safe-area-inset-bottom">
+                  <div className="flex items-center gap-2">
+                    <Badge colorClass={getTypeBadgeColor(selectedDoc.loaiVanBan)}>{selectedDoc.loaiVanBan}</Badge>
+                  </div>
+                  <button
+                    onClick={() => handleDownload(selectedDoc)}
+                    className="flex items-center gap-2 px-4 py-2.5 text-sm font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl shadow-lg transition-all active:scale-95"
+                  >
+                    <Download className="h-4 w-4" /> Tải về
+                  </button>
+                </div>
+              </div>
+            ) : (
+              /* Desktop Layout - Original Split View */
+              <div className="h-full flex items-center justify-center p-4">
+                <div className="bg-white rounded-2xl shadow-2xl w-full max-w-7xl h-[90vh] overflow-hidden flex flex-col animate-in zoom-in-95 duration-200">
+
+                  <div className="bg-emerald-600 px-6 py-3 flex justify-between items-center flex-shrink-0 shadow-md z-20">
+                    <h3 className="text-white font-semibold text-lg flex items-center gap-2">
+                      <FileText className="h-5 w-5" /> Chi tiết văn bản
+                    </h3>
+                    <button onClick={() => setIsViewModalOpen(false)} className="text-emerald-100 hover:text-white hover:bg-emerald-700 p-1 rounded-full transition-all">
+                      <X className="h-6 w-6" />
                     </button>
                   </div>
-                </div>
-
-                <div className="w-full lg:w-[65%] bg-gray-100 flex flex-col h-full relative">
-
-                  <div className="h-12 bg-white border-b border-gray-200 flex items-center justify-between px-4 shadow-sm z-10">
-                    <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Xem trước văn bản</span>
-                    <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-1">
-                      <button
-                        onClick={() => setPreviewZoom(z => Math.max(0.5, z - 0.1))}
-                        className="p-1.5 hover:bg-white hover:shadow-sm rounded-md text-gray-600 transition-all"
-                        title="Thu nhỏ"
-                      >
-                        <ZoomOut className="h-4 w-4" />
-                      </button>
-                      <span className="text-xs font-medium w-12 text-center text-gray-700">{Math.round(previewZoom * 100)}%</span>
-                      <button
-                        onClick={() => setPreviewZoom(z => Math.min(2.0, z + 0.1))}
-                        className="p-1.5 hover:bg-white hover:shadow-sm rounded-md text-gray-600 transition-all"
-                        title="Phóng to"
-                      >
-                        <ZoomIn className="h-4 w-4" />
-                      </button>
-                      <div className="w-px h-4 bg-gray-300 mx-1"></div>
-                      <button
-                        onClick={() => setPreviewZoom(1)}
-                        className="p-1.5 hover:bg-white hover:shadow-sm rounded-md text-gray-600 transition-all"
-                        title="Mặc định"
-                      >
-                        <RotateCcw className="h-4 w-4" />
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Preview Canvas (Scrollable) */}
-                  <div className="flex-1 overflow-hidden bg-slate-100/50 relative">
-                    <div className="absolute inset-0 w-full h-full">
-                      {/* --- Real Document Content --- */}
-                      {selectedDoc.fileDinhKemUrl && selectedDoc.fileDinhKemUrl !== '#' ? (
-                        <iframe
-                          src={getPreviewUrl(selectedDoc.fileDinhKemUrl)}
-                          className="w-full h-full"
-                          title="Document Preview"
-                        />
-                      ) : (
-                        <div className="flex flex-col items-center justify-center h-full text-gray-500">
-                          <FileText className="h-16 w-16 mb-4 text-gray-400" />
-                          <p className="text-lg font-medium">Không có bản xem trước</p>
-                          <p className="text-sm">Văn bản này chưa có file đính kèm hoặc file không hỗ trợ xem trước.</p>
+                  <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
+                    <div className="w-full lg:w-[35%] flex flex-col border-r border-gray-200 bg-white h-full">
+                      <div className="overflow-y-auto p-6 flex-1">
+                        <div className="mb-6">
+                          <h2 className="text-xl font-bold text-gray-900 mb-2 leading-tight">{selectedDoc.trichYeu}</h2>
+                          <div className="flex flex-wrap gap-2 mt-3">
+                            <Badge colorClass={getTypeBadgeColor(selectedDoc.loaiVanBan)}>{selectedDoc.loaiVanBan}</Badge>
+                            <span className="text-xs text-gray-500 flex items-center gap-1 px-2 py-0.5 bg-gray-100 rounded-full">
+                              <Calendar className="h-3 w-3" /> {new Date(selectedDoc.ngayBanHanh).toLocaleDateString('vi-VN')}
+                            </span>
+                          </div>
                         </div>
-                      )}
+
+                        <div className="space-y-4 mb-8">
+                          <div className="bg-gray-50 p-4 rounded-lg border border-gray-100">
+                            <div className="grid grid-cols-2 gap-4">
+                              <div>
+                                <p className="text-xs text-gray-400 uppercase font-semibold mb-1">Số / Ký hiệu</p>
+                                <p className="font-mono text-sm text-gray-800 font-medium">{selectedDoc.soKyHieu}</p>
+                              </div>
+                              <div>
+                                <p className="text-xs text-gray-400 uppercase font-semibold mb-1">Ngày ban hành</p>
+                                <p className="text-sm font-medium text-gray-800">{new Date(selectedDoc.ngayBanHanh).toLocaleDateString('vi-VN')}</p>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div>
+                            <p className="text-sm font-semibold text-gray-700 mb-2 flex items-center gap-2">
+                              <Building2 className="h-4 w-4 text-gray-400" /> Đơn vị ban hành
+                            </p>
+                            <p className="text-gray-700 bg-gray-50 p-3 rounded-lg border border-gray-100 text-sm">
+                              {selectedDoc.coQuanBanHanh}
+                            </p>
+                          </div>
+
+                          <div>
+                            <p className="text-sm font-semibold text-gray-700 mb-2">Tóm tắt nội dung</p>
+                            <p className="text-gray-600 text-sm leading-relaxed bg-gray-50 p-4 rounded-lg border border-gray-100 h-auto min-h-[100px]">
+                              {selectedDoc.tomTatNoiDung || "Chưa có tóm tắt nội dung cho văn bản này."}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="p-4 border-t border-gray-100 bg-gray-50 flex justify-between items-center flex-shrink-0">
+                        <button className="text-sm text-gray-500 hover:text-gray-800 underline">Báo cáo lỗi</button>
+                        <button
+                          onClick={() => handleDownload(selectedDoc)}
+                          className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg shadow-md transition-colors"
+                        >
+                          <Download className="h-4 w-4" /> Tải về máy
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="w-full lg:w-[65%] bg-gray-100 flex flex-col h-full relative">
+
+                      <div className="h-12 bg-white border-b border-gray-200 flex items-center justify-between px-4 shadow-sm z-10">
+                        <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Xem trước văn bản</span>
+                        <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-1">
+                          <button
+                            onClick={() => setPreviewZoom(z => Math.max(0.5, z - 0.1))}
+                            className="p-1.5 hover:bg-white hover:shadow-sm rounded-md text-gray-600 transition-all"
+                            title="Thu nhỏ"
+                          >
+                            <ZoomOut className="h-4 w-4" />
+                          </button>
+                          <span className="text-xs font-medium w-12 text-center text-gray-700">{Math.round(previewZoom * 100)}%</span>
+                          <button
+                            onClick={() => setPreviewZoom(z => Math.min(2.0, z + 0.1))}
+                            className="p-1.5 hover:bg-white hover:shadow-sm rounded-md text-gray-600 transition-all"
+                            title="Phóng to"
+                          >
+                            <ZoomIn className="h-4 w-4" />
+                          </button>
+                          <div className="w-px h-4 bg-gray-300 mx-1"></div>
+                          <button
+                            onClick={() => setPreviewZoom(1)}
+                            className="p-1.5 hover:bg-white hover:shadow-sm rounded-md text-gray-600 transition-all"
+                            title="Mặc định"
+                          >
+                            <RotateCcw className="h-4 w-4" />
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Preview Canvas */}
+                      <div className="flex-1 overflow-hidden bg-slate-100/50 relative">
+                        <div className="absolute inset-0 w-full h-full">
+                          {selectedDoc.fileDinhKemUrl && selectedDoc.fileDinhKemUrl !== '#' ? (
+                            <iframe
+                              src={getPreviewUrl(selectedDoc.fileDinhKemUrl)}
+                              className="w-full h-full"
+                              title="Document Preview"
+                            />
+                          ) : (
+                            <div className="flex flex-col items-center justify-center h-full text-gray-500">
+                              <FileText className="h-16 w-16 mb-4 text-gray-400" />
+                              <p className="text-lg font-medium">Không có bản xem trước</p>
+                              <p className="text-sm">Văn bản này chưa có file đính kèm hoặc file không hỗ trợ xem trước.</p>
+                            </div>
+                          )}
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </div>
               </div>
-            </div>
+            )}
           </div>
         )
       }
