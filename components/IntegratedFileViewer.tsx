@@ -81,6 +81,7 @@ const IntegratedFileViewer: React.FC<IntegratedFileViewerProps> = ({
     // Comment management state
     const [editingComment, setEditingComment] = useState<{ id: string; content: string } | null>(null);
     const [deleteCommentId, setDeleteCommentId] = useState<string | null>(null);
+    const [replyingToId, setReplyingToId] = useState<string | null>(null);
     const { user } = useAuth();
     const iframeRef = useRef<HTMLIFrameElement>(null);
     // Use a ref to keep the timestamp stable across re-renders (like toast updates)
@@ -282,6 +283,7 @@ const IntegratedFileViewer: React.FC<IntegratedFileViewerProps> = ({
         const type = canComment ? 'comment' : 'response';
         onPostComment?.(newComment.trim(), type);
         setNewComment('');
+        setReplyingToId(null);
     };
 
     const handleApproveClick = () => {
@@ -506,34 +508,55 @@ const IntegratedFileViewer: React.FC<IntegratedFileViewerProps> = ({
                                             </div>
                                         </div>
                                         <p className="text-gray-600">{c.content}</p>
+
+                                        {/* Inline Reply for Author */}
+                                        {canRespond && c.type === 'request' && (
+                                            <div className="mt-2 pt-2 border-t border-gray-100">
+                                                {!replyingToId || replyingToId !== c.id ? (
+                                                    <button
+                                                        onClick={() => setReplyingToId(c.id)}
+                                                        className="text-xs text-blue-600 hover:text-blue-800 font-bold flex items-center gap-1 transition-colors"
+                                                    >
+                                                        <MessageSquare className="h-3 w-3" />
+                                                        Phản hồi yêu cầu này
+                                                    </button>
+                                                ) : (
+                                                    <div className="animate-in fade-in slide-in-from-top-1 duration-200">
+                                                        <div className="flex gap-2">
+                                                            <input
+                                                                type="text"
+                                                                autoFocus
+                                                                value={newComment}
+                                                                onChange={(e) => setNewComment(e.target.value)}
+                                                                placeholder="Nhập nội dung phản hồi..."
+                                                                className="flex-1 px-3 py-2 text-sm border border-blue-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                                                                onKeyDown={(e) => e.key === 'Enter' && handleSubmitComment()}
+                                                            />
+                                                            <button
+                                                                onClick={handleSubmitComment}
+                                                                disabled={!newComment.trim()}
+                                                                className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg disabled:opacity-50 shadow-sm"
+                                                            >
+                                                                <Send className="h-4 w-4" />
+                                                            </button>
+                                                            <button
+                                                                onClick={() => { setReplyingToId(null); setNewComment(''); }}
+                                                                className="px-2 py-2 text-gray-400 hover:bg-gray-100 rounded-lg"
+                                                            >
+                                                                <X className="h-4 w-4" />
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
                             ))
                         )}
                     </div>
 
-                    {/* Comment Input */}
-                    {(canComment || canRespond) && (
-                        <div className="p-3 border-t border-gray-100 bg-gray-50">
-                            <div className="flex gap-2">
-                                <input
-                                    type="text"
-                                    value={newComment}
-                                    onChange={(e) => setNewComment(e.target.value)}
-                                    placeholder={canComment ? "Nhập góp ý..." : "Nhập phản hồi..."}
-                                    className="flex-1 px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400 text-gray-800"
-                                    onKeyDown={(e) => e.key === 'Enter' && handleSubmitComment()}
-                                />
-                                <button
-                                    onClick={handleSubmitComment}
-                                    disabled={!newComment.trim()}
-                                    className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                                >
-                                    <Send className="h-4 w-4" />
-                                </button>
-                            </div>
-                        </div>
-                    )}
+
                 </div>
             </div>
 
