@@ -22,6 +22,7 @@ import {
    Maximize2
 } from 'lucide-react';
 import { OfficeDocument, Comment } from '../types';
+import { useSchoolYear } from '../context/SchoolYearContext';
 import { useAuth } from '../context/AuthContext';
 import { useNotification } from '../context/NotificationContext';
 import { createNotification } from '../utils/notificationUtils';
@@ -43,6 +44,7 @@ const getFileIcon = (type: string) => {
 const OfficeDocuments: React.FC = () => {
    const navigate = useNavigate();
    const { user } = useAuth();
+   const { currentSchoolYear } = useSchoolYear();
    const { addToast } = useNotification();
    const [documents, setDocuments] = useState<OfficeDocument[]>([]);
    const [activeCategory, setActiveCategory] = useState<'all' | 'finance' | 'medical' | 'general'>('all');
@@ -83,6 +85,10 @@ const OfficeDocuments: React.FC = () => {
          const docs: OfficeDocument[] = [];
          snapshot.forEach((doc) => {
             const data = doc.data();
+            // School Year Check
+            const itemYear = data.schoolYear || '2025-2026';
+            if (itemYear !== currentSchoolYear) return;
+
             docs.push({
                id: doc.id,
                ...data,
@@ -92,7 +98,7 @@ const OfficeDocuments: React.FC = () => {
          setDocuments(docs);
       });
       return () => unsubscribe();
-   }, []);
+   }, [currentSchoolYear]);
 
    // Filter Logic
    const filteredDocs = documents.filter(doc => {
@@ -234,6 +240,7 @@ const OfficeDocuments: React.FC = () => {
                role: currentUser?.roleLabel || 'Nhân viên'
             },
             uploadDate: new Date().toISOString(),
+            schoolYear: currentSchoolYear,
             comments: [],
             type: uploadFile.name.split('.').pop() || 'file',
             fileType: uploadFile.name.split('.').pop() || 'file',

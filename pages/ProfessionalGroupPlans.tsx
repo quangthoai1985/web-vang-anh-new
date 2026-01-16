@@ -67,11 +67,16 @@ interface MeetingMinute {
 
 
 
+import { useSchoolYear } from '../context/SchoolYearContext';
+
+// ... (existing helper interface definitions)
+
 const ProfessionalGroupPlans: React.FC = () => {
    const navigate = useNavigate();
    const { user } = useAuth();
    const { addToast } = useNotification();
    const [searchParams, setSearchParams] = useSearchParams();
+   const { currentSchoolYear } = useSchoolYear();
 
    // Highlight state for notification navigation
    const [highlightFileId, setHighlightFileId] = useState<string | null>(null);
@@ -85,6 +90,7 @@ const ProfessionalGroupPlans: React.FC = () => {
 
    // Fetch Data from Firestore
    useEffect(() => {
+      // Fetch all, then filter by school year client-side to handle legacy data
       const q = query(collection(db, 'plans'), orderBy('uploadDate', 'desc'));
       const unsubscribe = onSnapshot(q, (snapshot) => {
          const plansData: GroupPlan[] = [];
@@ -93,6 +99,11 @@ const ProfessionalGroupPlans: React.FC = () => {
          snapshot.forEach((doc) => {
             const data = doc.data() as any;
             const item = { id: doc.id, ...data };
+
+            // School Year Check
+            // Legacy items (undefined schoolYear) default to '2025-2026'
+            const itemYear = data.schoolYear || '2025-2026';
+            if (itemYear !== currentSchoolYear) return;
 
             if (data.type === 'plan') {
                plansData.push(item);
@@ -106,45 +117,61 @@ const ProfessionalGroupPlans: React.FC = () => {
       });
 
       return () => unsubscribe();
-   }, []);
+   }, [currentSchoolYear]);
 
    // Handle notification navigation - highlight and open drawer
+   const processedFileIdRef = useRef<string | null>(null);
+
    useEffect(() => {
       const fileId = searchParams.get('fileId');
       const highlight = searchParams.get('highlight');
 
-      if (fileId && highlight === 'true') {
+      // Skip if no fileId, no highlight param, or data not loaded yet
+      if (!fileId || highlight !== 'true' || (plans.length === 0 && minutes.length === 0)) {
+         return;
+      }
+
+      // Skip if we've already processed this fileId
+      if (processedFileIdRef.current === fileId) {
+         return;
+      }
+
+      const foundPlan = plans.find(p => p.id === fileId);
+      const foundMinute = minutes.find(m => m.id === fileId);
+      const foundItem = foundPlan || foundMinute;
+
+      if (foundItem) {
+         // Mark as processed immediately to prevent re-processing
+         processedFileIdRef.current = fileId;
+
+         // Set highlight first
          setHighlightFileId(fileId);
 
-         // Find the item to open drawer
-         // Note: We need to access the current 'plans' and 'minutes' state. 
-         // Since this effect depends on searchParams, it might run before plans are loaded.
-         // However, when plans change, we don't necessarily want to re-run this logic unless 
-         // we haven't found the item yet.
-         // Better strategy: Add dependencies on plans/minutes, but only act if fileId is set.
+         // Clear URL params
+         setSearchParams({}, { replace: true });
 
-         const foundPlan = plans.find(p => p.id === fileId);
-         const foundMinute = minutes.find(m => m.id === fileId);
-         const foundItem = foundPlan || foundMinute;
-
-         if (foundItem) {
-            setSelectedItem(foundItem);
-            setIsDrawerOpen(true);
-
-            // Initial scroll attempt
-            const element = document.getElementById(`file-${fileId}`);
-            if (element) {
-               element.scrollIntoView({ behavior: 'smooth', block: 'center' });
-            }
-
-            // Clear highlight after 3 seconds
-            setTimeout(() => {
-               setHighlightFileId(null);
-            }, 3000);
-
-            // Clear URL params
-            setSearchParams({}, { replace: true });
+         // Scroll to element
+         const element = document.getElementById(`file-${fileId}`);
+         if (element) {
+            element.scrollIntoView({ behavior: 'smooth', block: 'center' });
          }
+
+         // Open drawer/viewer after a short delay to let highlight be visible
+         const openTimer = setTimeout(() => {
+            setSelectedItem(foundItem);
+            setIsFileViewerOpen(true);
+         }, 300);
+
+         // Clear highlight after 5 seconds (extended from 3 for better visibility)
+         const clearTimer = setTimeout(() => {
+            setHighlightFileId(null);
+            processedFileIdRef.current = null; // Reset for potential future navigations
+         }, 5000);
+
+         return () => {
+            clearTimeout(openTimer);
+            clearTimeout(clearTimer);
+         };
       }
    }, [searchParams, plans, minutes, setSearchParams]);
 
@@ -199,27 +226,42 @@ const ProfessionalGroupPlans: React.FC = () => {
    };
 
    // Permission Check for Comment (Reviewer: Principal/Admin)
+   // ONLY when file is NOT approved (pending or needs_revision)
    const canComment = (item: GroupPlan | MeetingMinute): boolean => {
       if (!user) return false;
+      // Block if file is already approved
+      const approvalStatus = item.approval?.status;
+      if (approvalStatus === 'approved') return false;
       // Principal and Admin can comment on everything (Acting as Reviewer)
       return ['principal', 'admin'].includes(user.role);
    };
 
    // Permission Check for Response (Uploader)
+   // Response input is only shown when:
+   // 1. File has 'needs_revision' status (reviewer requested changes)
+   // 2. User is the file owner
+   // 3. File is NOT already approved
    const canRespond = (item: GroupPlan | MeetingMinute): boolean => {
       if (!user) return false;
+
+      // Block if file is already approved
+      const approvalStatus = item.approval?.status;
+      if (approvalStatus === 'approved') return false;
 
       // Use canEdit to check ownership as it already handles ID/Name fallback
       const isOwner = canEdit(item);
 
-      // Allow response if: (1) Is Owner AND (2) (Needs Revision OR Has Comments)
-      // This prevents uploader from chatting freely unless there is a review action
-      const needsRevision = item.approval?.status === 'needs_revision';
-      const hasComments = (item.comments?.length || 0) > 0;
+      // Only allow response if file needs revision (has active revision request)
+      const needsRevision = approvalStatus === 'needs_revision';
 
-      return isOwner && (needsRevision || hasComments);
+      return isOwner && needsRevision;
    };
 
+   // Check if user can edit/delete a specific comment (only own comments)
+   const canManageComment = (comment: Comment): boolean => {
+      if (!user) return false;
+      return comment.userId === user.id;
+   };
 
 
    // Check if file is a Word document (editable)
@@ -724,6 +766,7 @@ const ProfessionalGroupPlans: React.FC = () => {
             uploaderId: user?.id || '', // Thêm uploaderId để kiểm tra quyền chính xác
             uploaderRole: user?.role || 'teacher', // Lưu vai trò người upload
             uploadDate: new Date().toISOString(),
+            schoolYear: currentSchoolYear, // Add current school year
             viewers: [],
             commentCount: 0,
             comments: [],
@@ -1657,6 +1700,88 @@ const ProfessionalGroupPlans: React.FC = () => {
                      if (type === 'response') {
                         setNewComment(content);
                         handleResponse({ preventDefault: () => { } } as React.FormEvent);
+                     }
+                  }}
+                  canManageComment={canManageComment}
+                  onEditComment={async (commentId: string, newContent: string) => {
+                     if (!selectedItem || !user) return;
+                     try {
+                        const collectionRef = selectedItem.type === 'plan' ? 'plans' : 'plans';
+                        const docRef = doc(db, collectionRef, selectedItem.id);
+                        const currentComments = selectedItem.comments || [];
+                        const updatedComments = currentComments.map((c: Comment) =>
+                           c.id === commentId
+                              ? { ...c, content: newContent, editedAt: new Date().toISOString() }
+                              : c
+                        );
+                        await updateDoc(docRef, { comments: updatedComments });
+                        setSelectedItem({
+                           ...selectedItem,
+                           comments: updatedComments
+                        } as any);
+                        addToast("Đã cập nhật góp ý", "Nội dung góp ý đã được lưu.", "success");
+                     } catch (error) {
+                        console.error("Error editing comment:", error);
+                        addToast("Lỗi", "Không thể cập nhật góp ý.", "error");
+                     }
+                  }}
+                  onDeleteComment={async (commentId: string) => {
+                     if (!selectedItem || !user) return;
+                     const commentToDeleteFound = selectedItem.comments?.find((c: Comment) => c.id === commentId);
+                     if (!commentToDeleteFound) return;
+
+                     try {
+                        const collectionRef = selectedItem.type === 'plan' ? 'plans' : 'plans';
+                        const docRef = doc(db, collectionRef, selectedItem.id);
+                        const currentComments = selectedItem.comments || [];
+                        const updatedComments = currentComments.filter((c: Comment) => c.id !== commentId);
+
+                        const updateData: any = {
+                           comments: updatedComments,
+                           commentCount: updatedComments.length
+                        };
+
+                        // Special Logic: If deleting a 'request', revert status to pending
+                        let newApprovalStatus = selectedItem.approval?.status;
+                        let newRejectionReason = selectedItem.approval?.rejectionReason;
+
+                        if (commentToDeleteFound.type === 'request') {
+                           if (newApprovalStatus === 'needs_revision') {
+                              newApprovalStatus = 'pending';
+                              newRejectionReason = undefined;
+                              updateData['approval.status'] = 'pending';
+                              updateData['approval.rejectionReason'] = deleteField();
+                              addToast("Đã hoàn tác", "Yêu cầu sửa đã bị xóa. Trạng thái hồ sơ trở về 'Chờ duyệt'.", "info");
+                           }
+                        }
+
+                        // Special Logic: If deleting a 'response', check if there's still an active request
+                        if (commentToDeleteFound.type === 'response') {
+                           const hasActiveRequest = updatedComments.some((c: Comment) => c.type === 'request');
+                           if (hasActiveRequest && newApprovalStatus === 'pending') {
+                              newApprovalStatus = 'needs_revision';
+                              updateData['approval.status'] = 'needs_revision';
+                              addToast("Đã hoàn tác", "Phản hồi đã bị xóa. Bạn có thể phản hồi lại.", "info");
+                           }
+                        }
+
+                        await updateDoc(docRef, updateData);
+
+                        setSelectedItem({
+                           ...selectedItem,
+                           comments: updatedComments,
+                           commentCount: updatedComments.length,
+                           approval: {
+                              ...selectedItem.approval,
+                              status: newApprovalStatus,
+                              rejectionReason: newRejectionReason
+                           }
+                        } as any);
+
+                        addToast("Đã xóa góp ý", "Góp ý đã được xóa thành công.", "success");
+                     } catch (error) {
+                        console.error("Error deleting comment:", error);
+                        addToast("Lỗi", "Không thể xóa góp ý.", "error");
                      }
                   }}
                />

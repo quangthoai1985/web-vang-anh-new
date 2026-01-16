@@ -185,9 +185,15 @@ const Header: React.FC = () => {
                           markAsRead(item.id);
                           removeNotification(item.id); // Remove from list after viewing
                           if (item.targetPath) {
-                            // Add highlight parameter for visual effect on target
-                            const separator = item.targetPath.includes('?') ? '&' : '?';
-                            navigate(`${item.targetPath}${separator}highlight=true`);
+                            // Check if highlight parameter already exists in targetPath
+                            const hasHighlight = item.targetPath.includes('highlight=');
+                            let finalPath = item.targetPath;
+                            if (!hasHighlight) {
+                              // Add highlight parameter for visual effect on target
+                              const separator = item.targetPath.includes('?') ? '&' : '?';
+                              finalPath = `${item.targetPath}${separator}highlight=true`;
+                            }
+                            navigate(finalPath);
                             setIsNotifOpen(false);
                           }
                         }}

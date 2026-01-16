@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useState } from 'react';
-import { X, Loader2, PenLine, FileText, Download, MessageSquare, CheckCircle, AlertCircle, Send, User, Clock, Edit3, Trash2, ExternalLink } from 'lucide-react';
+import { X, Loader2, PenLine, FileText, Download, MessageSquare, CheckCircle, AlertCircle, Send, User, Clock, Edit3, Trash2, ExternalLink, Info, HelpCircle } from 'lucide-react';
 import { storage, db } from '../firebase';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { doc, updateDoc, getDoc, arrayUnion } from 'firebase/firestore';
@@ -42,6 +42,10 @@ interface IntegratedFileViewerProps {
     onApprove?: () => void;
     onRequestRevision?: (reason: string) => void;
     onPostComment?: (content: string, type: 'comment' | 'response') => void;
+    // Comment management
+    onEditComment?: (commentId: string, newContent: string) => void;
+    onDeleteComment?: (commentId: string) => void;
+    canManageComment?: (comment: Comment) => boolean;
 }
 
 const IntegratedFileViewer: React.FC<IntegratedFileViewerProps> = ({
@@ -58,17 +62,25 @@ const IntegratedFileViewer: React.FC<IntegratedFileViewerProps> = ({
     onApprove,
     onRequestRevision,
     onPostComment,
+    onEditComment,
+    onDeleteComment,
+    canManageComment,
 }) => {
     const [isLoading, setIsLoading] = useState(true);
     const [isSaving, setIsSaving] = useState(false);
     const [localFileUrl, setLocalFileUrl] = useState<string | null>(null);
     const [signatureUrl, setSignatureUrl] = useState<string | null>(null);
     const [showSignaturePanel, setShowSignaturePanel] = useState(false);
+    const [authorSignatureUrl, setAuthorSignatureUrl] = useState<string | null>(null);
+    const [showInstructionsModal, setShowInstructionsModal] = useState(false);
     const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
     const [newComment, setNewComment] = useState('');
     const [showRejectModal, setShowRejectModal] = useState(false);
     const [rejectReason, setRejectReason] = useState('');
     const [loadError, setLoadError] = useState<string | null>(null);
+    // Comment management state
+    const [editingComment, setEditingComment] = useState<{ id: string; content: string } | null>(null);
+    const [deleteCommentId, setDeleteCommentId] = useState<string | null>(null);
     const { user } = useAuth();
     const iframeRef = useRef<HTMLIFrameElement>(null);
     // Use a ref to keep the timestamp stable across re-renders (like toast updates)
@@ -118,6 +130,79 @@ const IntegratedFileViewer: React.FC<IntegratedFileViewerProps> = ({
             // Loading indicator will be hidden by iframe onLoad
         }
     }, [file.url]);
+
+    // Fetch author's signature if user is the file owner
+    useEffect(() => {
+        const fetchAuthorSignature = async () => {
+            // Only fetch if user can edit (is the author)
+            if (!canEdit || !file.uploaderId) {
+                setAuthorSignatureUrl(null);
+                return;
+            }
+
+            try {
+                const userDocRef = doc(db, 'users', file.uploaderId);
+                const userDoc = await getDoc(userDocRef);
+
+                if (userDoc.exists()) {
+                    const userData = userDoc.data();
+                    setAuthorSignatureUrl(userData.signatureUrl || null);
+                }
+            } catch (error) {
+                console.error('Error fetching author signature:', error);
+                setAuthorSignatureUrl(null);
+            }
+        };
+
+        fetchAuthorSignature();
+    }, [canEdit, file.uploaderId]);
+
+    // Download signature handler - Use Image + Canvas to bypass CORS
+    const handleDownloadSignature = () => {
+        if (!authorSignatureUrl) return;
+
+        // Create filename
+        const authorName = file.uploader?.replace(/\s+/g, '_') || 'author';
+        const fileName = `chu_ky_${authorName}.png`;
+
+        // Create image element to load the signature
+        const img = new Image();
+        img.crossOrigin = 'anonymous'; // Enable CORS for canvas
+
+        img.onload = () => {
+            // Create canvas and draw image
+            const canvas = document.createElement('canvas');
+            canvas.width = img.naturalWidth;
+            canvas.height = img.naturalHeight;
+            const ctx = canvas.getContext('2d');
+            if (ctx) {
+                ctx.drawImage(img, 0, 0);
+
+                // Convert canvas to blob and download
+                canvas.toBlob((blob) => {
+                    if (blob) {
+                        const url = URL.createObjectURL(blob);
+                        const link = document.createElement('a');
+                        link.href = url;
+                        link.download = fileName;
+                        document.body.appendChild(link);
+                        link.click();
+                        document.body.removeChild(link);
+                        URL.revokeObjectURL(url);
+                        showToast('Đã tải chữ ký thành công!', 'success');
+                    }
+                }, 'image/png');
+            }
+        };
+
+        img.onerror = () => {
+            console.error('Error loading signature image');
+            showToast('Lỗi khi tải chữ ký', 'error');
+        };
+
+        img.src = authorSignatureUrl;
+    };
+
 
 
     // Handle save from editor
@@ -246,8 +331,29 @@ const IntegratedFileViewer: React.FC<IntegratedFileViewerProps> = ({
 
                     <div className="flex items-center gap-2">
 
+                        {/* Signature Download Button - Only for author with signature */}
+                        {canEdit && authorSignatureUrl && (
+                            <div className="flex items-center gap-1">
+                                <button
+                                    onClick={handleDownloadSignature}
+                                    className="flex items-center gap-2 px-3 py-2 bg-indigo-500 hover:bg-indigo-600 rounded-lg transition-colors text-sm font-medium"
+                                    title="Tải chữ ký"
+                                >
+                                    <PenLine className="h-4 w-4" />
+                                    <span className="hidden sm:inline">Tải chữ ký</span>
+                                </button>
+                                <button
+                                    onClick={() => setShowInstructionsModal(true)}
+                                    className="p-2 hover:bg-blue-500 rounded-lg transition-colors"
+                                    title="Hướng dẫn chèn chữ ký"
+                                >
+                                    <HelpCircle className="h-5 w-5" />
+                                </button>
+                            </div>
+                        )}
 
                         <div className="text-xs bg-blue-800 px-2 py-1 rounded text-blue-200">
+
                             {isSaving ? 'Đang lưu...' : 'Tự động lưu khi Save'}
                         </div>
 
@@ -376,7 +482,28 @@ const IntegratedFileViewer: React.FC<IntegratedFileViewerProps> = ({
                                     <div className={`flex-1 p-2 rounded-lg text-sm ${c.type === 'response' ? 'bg-blue-50' : 'bg-gray-100'}`}>
                                         <div className="flex items-center justify-between mb-1">
                                             <span className="font-semibold text-gray-700 text-xs">{c.userName}</span>
-                                            <span className="text-[10px] text-gray-400">{new Date(c.timestamp).toLocaleDateString('vi-VN')}</span>
+                                            <div className="flex items-center gap-1">
+                                                <span className="text-[10px] text-gray-400">{new Date(c.timestamp).toLocaleDateString('vi-VN')}</span>
+                                                {/* Edit/Delete buttons - only for own comments */}
+                                                {canManageComment?.(c) && (
+                                                    <div className="flex items-center gap-1 ml-2">
+                                                        <button
+                                                            onClick={() => setEditingComment({ id: c.id, content: c.content })}
+                                                            className="p-1 text-gray-400 hover:text-blue-500 hover:bg-blue-50 rounded transition-colors"
+                                                            title="Sửa"
+                                                        >
+                                                            <Edit3 className="h-3 w-3" />
+                                                        </button>
+                                                        <button
+                                                            onClick={() => setDeleteCommentId(c.id)}
+                                                            className="p-1 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded transition-colors"
+                                                            title="Xóa"
+                                                        >
+                                                            <Trash2 className="h-3 w-3" />
+                                                        </button>
+                                                    </div>
+                                                )}
+                                            </div>
                                         </div>
                                         <p className="text-gray-600">{c.content}</p>
                                     </div>
@@ -435,7 +562,154 @@ const IntegratedFileViewer: React.FC<IntegratedFileViewerProps> = ({
                 </div>
             )}
 
+            {/* Edit Comment Modal */}
+            {editingComment && (
+                <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/50">
+                    <div className="bg-white rounded-xl shadow-2xl p-6 w-96 max-w-[90vw]">
+                        <h3 className="text-lg font-bold text-gray-800 mb-4">Chỉnh sửa góp ý</h3>
+                        <textarea
+                            value={editingComment.content}
+                            onChange={(e) => setEditingComment({ ...editingComment, content: e.target.value })}
+                            placeholder="Nhập nội dung góp ý..."
+                            className="w-full p-3 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 resize-none h-24 text-gray-800"
+                        />
+                        <div className="flex justify-end gap-2 mt-4">
+                            <button onClick={() => setEditingComment(null)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg text-sm font-medium">
+                                Hủy
+                            </button>
+                            <button
+                                onClick={() => {
+                                    if (editingComment.content.trim() && onEditComment) {
+                                        onEditComment(editingComment.id, editingComment.content.trim());
+                                        setEditingComment(null);
+                                    }
+                                }}
+                                disabled={!editingComment.content.trim()}
+                                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-bold disabled:opacity-50"
+                            >
+                                Lưu thay đổi
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Delete Comment Confirmation Modal */}
+            {deleteCommentId && (
+                <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/50">
+                    <div className="bg-white rounded-xl shadow-2xl p-6 w-96 max-w-[90vw]">
+                        <h3 className="text-lg font-bold text-gray-800 mb-2">Xác nhận xóa</h3>
+                        <p className="text-gray-600 text-sm mb-4">Bạn có chắc chắn muốn xóa góp ý này? Thao tác này không thể hoàn tác.</p>
+                        <div className="flex justify-end gap-2">
+                            <button onClick={() => setDeleteCommentId(null)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg text-sm font-medium">
+                                Hủy
+                            </button>
+                            <button
+                                onClick={() => {
+                                    if (onDeleteComment) {
+                                        onDeleteComment(deleteCommentId);
+                                        setDeleteCommentId(null);
+                                    }
+                                }}
+                                className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm font-bold"
+                            >
+                                Xóa
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Instructions Modal */}
+            {showInstructionsModal && (
+                <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/50">
+                    <div className="bg-white rounded-xl shadow-2xl p-6 w-[500px] max-w-[90vw] max-h-[90vh] overflow-y-auto">
+                        <div className="flex items-center justify-between mb-4">
+                            <h3 className="text-lg font-bold text-gray-800 flex items-center gap-2">
+                                <Info className="h-5 w-5 text-blue-600" />
+                                Hướng dẫn chèn chữ ký vào tài liệu
+                            </h3>
+                            <button onClick={() => setShowInstructionsModal(false)} className="text-gray-400 hover:text-gray-600">
+                                <X className="h-5 w-5" />
+                            </button>
+                        </div>
+
+                        <div className="space-y-4 text-sm text-gray-700">
+                            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                                <p className="font-semibold text-blue-800 mb-2">📌 Lưu ý quan trọng:</p>
+                                <p className="text-blue-700">Bạn vừa tải xuống file chữ ký. Hãy làm theo các bước dưới đây để chèn chữ ký vào tài liệu Word của bạn.</p>
+                            </div>
+
+                            <div className="space-y-3">
+                                <div className="flex gap-3">
+                                    <div className="flex-shrink-0 w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">1</div>
+                                    <div className="flex-1">
+                                        <p className="font-semibold text-gray-800 mb-1">Mở tài liệu Word</p>
+                                        <p className="text-gray-600">Mở tài liệu cần chèn chữ ký bằng Microsoft Word hoặc ứng dụng soạn thảo văn bản.</p>
+                                    </div>
+                                </div>
+
+                                <div className="flex gap-3">
+                                    <div className="flex-shrink-0 w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">2</div>
+                                    <div className="flex-1">
+                                        <p className="font-semibold text-gray-800 mb-1">Đặt con trỏ tại vị trí muốn chèn</p>
+                                        <p className="text-gray-600">Click vào vị trí trong tài liệu nơi bạn muốn đặt chữ ký (thường là cuối trang hoặc dưới văn bản).</p>
+                                    </div>
+                                </div>
+
+                                <div className="flex gap-3">
+                                    <div className="flex-shrink-0 w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">3</div>
+                                    <div className="flex-1">
+                                        <p className="font-semibold text-gray-800 mb-1">Vào menu Insert (Chèn)</p>
+                                        <p className="text-gray-600">Trên thanh menu, chọn tab <span className="font-semibold bg-gray-100 px-2 py-0.5 rounded">Insert</span> (hoặc <span className="font-semibold bg-gray-100 px-2 py-0.5 rounded">Chèn</span>).</p>
+                                    </div>
+                                </div>
+
+                                <div className="flex gap-3">
+                                    <div className="flex-shrink-0 w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">4</div>
+                                    <div className="flex-1">
+                                        <p className="font-semibold text-gray-800 mb-1">Chọn Image → Image From File</p>
+                                        <p className="text-gray-600">Click vào <span className="font-semibold bg-gray-100 px-2 py-0.5 rounded">Picture</span> (hoặc <span className="font-semibold bg-gray-100 px-2 py-0.5 rounded">Hình ảnh</span>), sau đó chọn <span className="font-semibold bg-gray-100 px-2 py-0.5 rounded">This Device</span> hoặc <span className="font-semibold bg-gray-100 px-2 py-0.5 rounded">From File</span>.</p>
+                                    </div>
+                                </div>
+
+                                <div className="flex gap-3">
+                                    <div className="flex-shrink-0 w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">5</div>
+                                    <div className="flex-1">
+                                        <p className="font-semibold text-gray-800 mb-1">Chọn file chữ ký vừa tải</p>
+                                        <p className="text-gray-600">Tìm và chọn file chữ ký <span className="font-mono bg-gray-100 px-2 py-0.5 rounded text-xs">chu_ky_[tên_của_bạn].png</span> trong thư mục Downloads.</p>
+                                    </div>
+                                </div>
+
+                                <div className="flex gap-3">
+                                    <div className="flex-shrink-0 w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">6</div>
+                                    <div className="flex-1">
+                                        <p className="font-semibold text-gray-800 mb-1">Điều chỉnh kích thước và vị trí</p>
+                                        <p className="text-gray-600">Sau khi chèn, bạn có thể kéo góc ảnh để thay đổi kích thước và di chuyển đến vị trí mong muốn.</p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="bg-green-50 border border-green-200 rounded-lg p-4 mt-4">
+                                <p className="font-semibold text-green-800 mb-1">✅ Hoàn thành!</p>
+                                <p className="text-green-700 text-xs">Chữ ký của bạn đã được chèn vào tài liệu. Bạn có thể lưu và chia sẻ tài liệu này.</p>
+                            </div>
+                        </div>
+
+                        <div className="flex justify-end mt-6">
+                            <button
+                                onClick={() => setShowInstructionsModal(false)}
+                                className="px-6 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-medium transition-colors"
+                            >
+                                Đã hiểu
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {/* Toast */}
+
             {toast && (
                 <div className={`fixed bottom-4 left-1/2 -translate-x-1/2 z-[100] px-6 py-3 rounded-lg shadow-lg text-white font-medium flex items-center gap-2
                     ${toast.type === 'success' ? 'bg-green-600' : toast.type === 'error' ? 'bg-red-600' : 'bg-blue-600'}`}>

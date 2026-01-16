@@ -26,6 +26,7 @@ import { db, storage } from '../firebase';
 import { collection, addDoc, updateDoc, deleteDoc, doc, onSnapshot, query, orderBy } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { useNotification } from '../context/NotificationContext';
+import { useSchoolYear } from '../context/SchoolYearContext';
 import { useAuth } from '../context/AuthContext';
 import { getPreviewUrl } from '../utils/fileUtils';
 
@@ -37,6 +38,7 @@ const Badge = ({ children, colorClass }: { children?: React.ReactNode, colorClas
 
 const SchoolDocuments: React.FC = () => {
   const navigate = useNavigate();
+  const { currentSchoolYear } = useSchoolYear();
   const { addToast } = useNotification();
 
   // State
@@ -71,12 +73,16 @@ const SchoolDocuments: React.FC = () => {
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const docsData: DirectiveDocument[] = [];
       snapshot.forEach((doc) => {
-        docsData.push({ id: doc.id, ...doc.data() } as DirectiveDocument);
+        const data = doc.data();
+        // School Year Check
+        const itemYear = data.schoolYear || '2025-2026';
+        if (itemYear !== currentSchoolYear) return;
+        docsData.push({ id: doc.id, ...data } as DirectiveDocument);
       });
       setDocuments(docsData);
     });
     return () => unsubscribe();
-  }, []);
+  }, [currentSchoolYear]);
 
   // Filter Logic
   const filteredDocs = useMemo(() => {
@@ -187,6 +193,7 @@ const SchoolDocuments: React.FC = () => {
         await addDoc(collection(db, 'school_documents'), {
           ...formData,
           fileDinhKemUrl: fileUrl,
+          schoolYear: currentSchoolYear,
           createdAt: new Date().toISOString()
         });
         addToast("Thêm mới thành công", "Văn bản đã được thêm vào hệ thống.", "success");

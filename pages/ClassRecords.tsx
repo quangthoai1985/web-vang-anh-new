@@ -43,33 +43,32 @@ import { createNotification } from '../utils/notificationUtils';
 import { ClassFile, MonthFolder, ApprovalInfo, UserRole, Comment } from '../types';
 import { MOCK_FOLDERS } from '../data/mockData';
 
-// Helper function to get current school year
-const getCurrentSchoolYear = () => {
-   const now = new Date();
-   const currentMonth = now.getMonth() + 1; // 1-12
-   const currentYear = now.getFullYear();
+import { useSchoolYear } from '../context/SchoolYearContext';
 
-   // School year starts in September
-   // If current month is Aug (8) or earlier, we're in the previous school year
-   // If current month is Sep (9) or later, we're in the current school year
-   return currentMonth >= 9 ? currentYear : currentYear - 1;
-};
+// Generate dynamic month folders for specific school year
+const generateSchoolYearFolders = (schoolYearStr: string) => {
+   // Parsing "YYYY-YYYY"
+   const parts = schoolYearStr.split('-');
+   let startYear = parseInt(parts[0]);
+   let endYear = parseInt(parts[1]);
 
-// Generate dynamic month folders for current school year
-const generateSchoolYearFolders = () => {
-   const schoolYear = getCurrentSchoolYear();
-   const nextYear = schoolYear + 1;
+   // Fallback if invalid format
+   if (isNaN(startYear) || isNaN(endYear)) {
+      const now = new Date();
+      startYear = now.getFullYear();
+      endYear = startYear + 1;
+   }
 
    return [
-      { id: 'm9', name: `Tháng 09/${schoolYear}`, fileCount: 0, files: [] },
-      { id: 'm10', name: `Tháng 10/${schoolYear}`, fileCount: 0, files: [] },
-      { id: 'm11', name: `Tháng 11/${schoolYear}`, fileCount: 0, files: [] },
-      { id: 'm12', name: `Tháng 12/${schoolYear}`, fileCount: 0, files: [] },
-      { id: 'm01', name: `Tháng 01/${nextYear}`, fileCount: 0, files: [] },
-      { id: 'm02', name: `Tháng 02/${nextYear}`, fileCount: 0, files: [] },
-      { id: 'm03', name: `Tháng 03/${nextYear}`, fileCount: 0, files: [] },
-      { id: 'm04', name: `Tháng 04/${nextYear}`, fileCount: 0, files: [] },
-      { id: 'm05', name: `Tháng 05/${nextYear}`, fileCount: 0, files: [] },
+      { id: 'm9', name: `Tháng 09/${startYear}`, fileCount: 0, files: [] },
+      { id: 'm10', name: `Tháng 10/${startYear}`, fileCount: 0, files: [] },
+      { id: 'm11', name: `Tháng 11/${startYear}`, fileCount: 0, files: [] },
+      { id: 'm12', name: `Tháng 12/${startYear}`, fileCount: 0, files: [] },
+      { id: 'm01', name: `Tháng 01/${endYear}`, fileCount: 0, files: [] },
+      { id: 'm02', name: `Tháng 02/${endYear}`, fileCount: 0, files: [] },
+      { id: 'm03', name: `Tháng 03/${endYear}`, fileCount: 0, files: [] },
+      { id: 'm04', name: `Tháng 04/${endYear}`, fileCount: 0, files: [] },
+      { id: 'm05', name: `Tháng 05/${endYear}`, fileCount: 0, files: [] },
    ];
 };
 
@@ -103,6 +102,7 @@ const ClassRecords: React.FC = () => {
    const [searchParams, setSearchParams] = useSearchParams();
    const { user } = useAuth();
    const { addToast } = useNotification();
+   const { currentSchoolYear } = useSchoolYear();
 
    // Highlight state for notification navigation
    const [highlightFileId, setHighlightFileId] = useState<string | null>(null);
@@ -136,15 +136,23 @@ const ClassRecords: React.FC = () => {
    };
 
    // State
-   const [currentClass, setCurrentClass] = useState<any | null>(null);
-   const [folders, setFolders] = useState<MonthFolder[]>(generateSchoolYearFolders()); // Dynamic folders
+   const [currentClass, setCurrentClass] = useState<any>(null);
+   const [userRolesMap, setUserRolesMap] = useState<Record<string, UserRole>>({});
+   const [userNameRolesMap, setUserNameRolesMap] = useState<Record<string, UserRole>>({});
+   const [folders, setFolders] = useState<MonthFolder[]>([]); // Initialize empty, set in effect
    const [allFiles, setAllFiles] = useState<any[]>([]); // Store all files for filtering
    const [loading, setLoading] = useState(true);
 
    // State
    const [activeTab, setActiveTab] = useState<'plan' | 'assessment' | 'students' | 'steam'>('students');
    const [planSubTab, setPlanSubTab] = useState<'year' | 'month' | 'week'>('week'); // Default to week (most common)
-   const [expandedFolderId, setExpandedFolderId] = useState<string | null>('m11'); // Default open latest month
+   const [expandedFolderId, setExpandedFolderId] = useState<string | null>(() => {
+      const now = new Date();
+      const month = now.getMonth() + 1;
+      // Match IDs in generateSchoolYearFolders: m9, m10...m12, m01...m05
+      if (month === 9) return 'm9';
+      return month >= 10 ? `m${month}` : `m0${month}`;
+   });
    const [filter, setFilter] = useState<'all' | 'new' | 'unread'>('all');
    const [searchQuery, setSearchQuery] = useState('');
 
@@ -204,12 +212,17 @@ const ClassRecords: React.FC = () => {
    // Permission Check for Comment - Based on hierarchy:
    // - Vice Principal (vice_principal) can comment on Head Teacher/Vice Head Teacher AND all teachers
    // - Head Teacher/Vice Head Teacher can comment on Teacher files
+   // - ONLY when file is NOT approved (pending or needs_revision)
    const canComment = (file: ClassFile): boolean => {
       if (!user) return false;
       const fileData = file as any;
       const uploaderRole = fileData.uploaderRole;
 
       if (!uploaderRole) return false;
+
+      // Block if file is already approved
+      const approvalStatus = fileData.approval?.status;
+      if (approvalStatus === 'approved') return false;
 
       // Vice Principal can comment on Head Teacher, Vice Head Teacher, AND Teachers
       if (user.role === 'vice_principal') {
@@ -224,32 +237,37 @@ const ClassRecords: React.FC = () => {
       return false;
    };
 
-   // Permission Check for Response - Only file owner can respond to comments
+   // Permission Check for Response - Only file owner can respond to revision requests
+   // Response input is only shown when:
+   // 1. File has 'needs_revision' status (reviewer requested changes)
+   // 2. User is the file owner
+   // 3. File is NOT already approved
    const canRespond = (file: ClassFile): boolean => {
       if (!user) return false;
       const fileData = file as any;
+
+      // Block if file is already approved
+      const approvalStatus = fileData.approval?.status;
+      if (approvalStatus === 'approved') return false;
 
       // Check if user is file owner (by ID or by name)
       const isOwnerById = fileData.uploaderId === user.id;
       const isOwnerByName = fileData.uploader?.toLowerCase() === user.fullName?.toLowerCase();
       const isOwner = isOwnerById || isOwnerByName;
 
-      // Check if file needs revision (has comments requiring response)
-      const needsRevision = fileData.approval?.status === 'needs_revision';
-      const hasComments = (fileData.comments?.length || 0) > 0;
+      // Only allow response if file needs revision (has active revision request)
+      const needsRevision = approvalStatus === 'needs_revision';
 
-      // Allow response if: (1) is owner AND (2) has comments needing revision
-      const canRes = isOwner && (needsRevision || hasComments);
+      // Allow response if: (1) is owner AND (2) file needs revision
+      const canRes = isOwner && needsRevision;
 
       console.log('[canRespond]', {
          fileName: file.name,
          uploaderId: fileData.uploaderId,
          userId: user.id,
-         uploader: fileData.uploader,
-         userFullName: user.fullName,
-         isOwnerById, isOwnerByName, isOwner,
-         approvalStatus: fileData.approval?.status,
-         hasComments,
+         isOwner,
+         approvalStatus,
+         needsRevision,
          result: canRes
       });
 
@@ -375,12 +393,36 @@ const ClassRecords: React.FC = () => {
    const canApproveFile = (file: any): boolean => {
       if (!user) return false;
 
-      const uploaderRole = file.uploaderRole;
-      if (!uploaderRole) return false;
+      // 1. Không được tự duyệt bài của chính mình
+      // Check by ID (reliable) or Name (legacy)
+      const isOwnerById = file.uploaderId === user.id;
+      const isOwnerByName = file.uploader === user.fullName;
+      if (isOwnerById || (file.uploaderId ? false : isOwnerByName)) {
+         return false;
+      }
 
-      // Tổ trưởng + Tổ phó duyệt cho Giáo viên
+      // Determine the effective role of the uploader
+      // Priority: 
+      // 1. Current role from DB (via userRolesMap/userNameRolesMap) - handles stale file metadata
+      // 2. Role stored in file metadata - fallback
+      let distinctUploaderRole = file.uploaderRole;
+
+      if (file.uploaderId && userRolesMap[file.uploaderId]) {
+         distinctUploaderRole = userRolesMap[file.uploaderId];
+      } else if (file.uploader && userNameRolesMap[file.uploader]) {
+         distinctUploaderRole = userNameRolesMap[file.uploader];
+      }
+
+      if (!distinctUploaderRole) return false;
+
+      // 2. Phó Hiệu Trưởng duyệt cho Tổ Trưởng và Tổ Phó
+      if (user.role === 'vice_principal') {
+         return ['head_teacher', 'vice_head_teacher'].includes(distinctUploaderRole);
+      }
+
+      // 3. Tổ trưởng + Tổ phó duyệt cho Giáo viên
       if (['head_teacher', 'vice_head_teacher'].includes(user.role)) {
-         return uploaderRole === 'teacher';
+         return distinctUploaderRole === 'teacher';
       }
 
       return false;
@@ -625,6 +667,16 @@ const ClassRecords: React.FC = () => {
                   const teachersSnapshot = await getDocs(teachersQuery);
                   const allTeachers = teachersSnapshot.docs.map(doc => doc.data());
 
+                  // Populate role maps for approval logic
+                  const idMap: Record<string, UserRole> = {};
+                  const nameMap: Record<string, UserRole> = {};
+                  allTeachers.forEach((t: any) => {
+                     if (t.id && t.role) idMap[t.id] = t.role as UserRole;
+                     if (t.fullName && t.role) nameMap[t.fullName] = t.role as UserRole;
+                  });
+                  setUserRolesMap(idMap);
+                  setUserNameRolesMap(nameMap);
+
                   const foundTeachers = new Set<string>();
                   const normalizedClassId = normalizeStr(classId);
                   const normalizedClassName = normalizeStr(finalClassData.name);
@@ -688,14 +740,15 @@ const ClassRecords: React.FC = () => {
 
          // Group files by month
          // Support both formats: month='11' and month='m11'
-         const dynamicFolders = generateSchoolYearFolders();
+         const dynamicFolders = generateSchoolYearFolders(currentSchoolYear);
          const newFolders = dynamicFolders.map(folder => {
             const matchingFiles = files.filter(f => {
-               // 0. Filter by Category (Default to 'plan' if missing, for backward compatibility)
-               // BUT: We only want to show 'plan' files in the folders.
-               // If we have other categories, we should filter them out here if we are only using 'folders' for the Plan tab.
-               // However, the 'folders' state is currently used ONLY for the Plan tab (Month/Week views).
-               // So we should strictly filter for plan-related files here.
+               // 0. Filter by School Year
+               // Legacy files (undefined schoolYear) default to '2025-2026'
+               const fileYear = f.schoolYear || '2025-2026';
+               if (fileYear !== currentSchoolYear) return false;
+
+               // 1. Filter by Category (Default to 'plan' if missing, for backward compatibility)
                const fileCategory = f.category || 'plan'; // Default to plan
                if (fileCategory !== 'plan') return false;
 
@@ -753,60 +806,79 @@ const ClassRecords: React.FC = () => {
    }, [user, classId, navigate, currentClass, loading]);
 
    // Handle notification navigation - switch to correct tab and highlight file
+   const processedFileIdRef = useRef<string | null>(null);
+
    useEffect(() => {
       const fileId = searchParams.get('fileId');
       const highlight = searchParams.get('highlight');
 
       console.log('[ClassRecords] URL Params:', { fileId, highlight, allFilesCount: allFiles.length });
 
-      if (fileId && allFiles.length > 0) {
-         // Find the file in allFiles
-         const targetFile = allFiles.find((f: any) => f.id === fileId);
+      // Skip if no fileId, no highlight param, or already processed this fileId
+      if (!fileId || highlight !== 'true' || allFiles.length === 0) {
+         return;
+      }
 
-         if (targetFile) {
-            console.log('[ClassRecords] Found target file:', targetFile.name, 'category:', targetFile.category);
+      // Skip if we've already processed this fileId
+      if (processedFileIdRef.current === fileId) {
+         return;
+      }
 
-            // Set the correct tab based on file category
-            const category = targetFile.category || 'plan';
-            if (category === 'plan') {
-               setActiveTab('plan');
-               setPlanSubTab('week');
-            } else if (category === 'assessment') {
-               setActiveTab('assessment');
-            } else if (category === 'students') {
-               setActiveTab('students');
-            } else if (category === 'steam') {
-               setActiveTab('steam');
-            }
+      // Find the file in allFiles
+      const targetFile = allFiles.find((f: any) => f.id === fileId);
 
-            // Auto-expand the folder containing this file
-            const folderWithFile = folders.find(f => f.files.some(file => file.id === fileId));
-            if (folderWithFile) {
-               console.log('[ClassRecords] Auto-expanding folder:', folderWithFile.id);
-               setExpandedFolderId(folderWithFile.id);
-            }
+      if (targetFile) {
+         console.log('[ClassRecords] Found target file:', targetFile.name, 'category:', targetFile.category);
 
-            // Set highlight
-            if (highlight === 'true') {
-               setHighlightFileId(fileId);
+         // Mark as processed immediately to prevent re-processing
+         processedFileIdRef.current = fileId;
 
-               // Clear highlight after 3 seconds
-               const timer = setTimeout(() => {
-                  setHighlightFileId(null);
-               }, 3000);
-
-               // Auto-open the viewer with the target file
-               setSelectedFile(targetFile);
-               setIsFileViewerOpen(true);
-
-               // Clear URL params after processing
-               setSearchParams({}, { replace: true });
-
-               return () => clearTimeout(timer);
-            }
-         } else {
-            console.warn('[ClassRecords] File not found:', fileId);
+         // Set the correct tab based on file category
+         const category = targetFile.category || 'plan';
+         if (category === 'plan') {
+            setActiveTab('plan');
+            // Also set the correct sub-tab based on planType
+            const planType = targetFile.planType || 'week';
+            setPlanSubTab(planType);
+         } else if (category === 'assessment') {
+            setActiveTab('assessment');
+         } else if (category === 'students') {
+            setActiveTab('students');
+         } else if (category === 'steam') {
+            setActiveTab('steam');
          }
+
+         // Auto-expand the folder containing this file
+         const folderWithFile = folders.find(f => f.files.some(file => file.id === fileId));
+         if (folderWithFile) {
+            console.log('[ClassRecords] Auto-expanding folder:', folderWithFile.id);
+            setExpandedFolderId(folderWithFile.id);
+         }
+
+         // Set highlight first
+         setHighlightFileId(fileId);
+
+         // Clear URL params
+         setSearchParams({}, { replace: true });
+
+         // Open file viewer after a short delay to let highlight be visible
+         const openTimer = setTimeout(() => {
+            setSelectedFile(targetFile);
+            setIsFileViewerOpen(true);
+         }, 300);
+
+         // Clear highlight after 5 seconds (extended from 3 for better visibility)
+         const clearTimer = setTimeout(() => {
+            setHighlightFileId(null);
+            processedFileIdRef.current = null; // Reset for potential future navigations
+         }, 5000);
+
+         return () => {
+            clearTimeout(openTimer);
+            clearTimeout(clearTimer);
+         };
+      } else {
+         console.warn('[ClassRecords] File not found:', fileId);
       }
    }, [searchParams, setSearchParams, folders, allFiles]);
 
@@ -958,6 +1030,7 @@ const ClassRecords: React.FC = () => {
             uploader: user.fullName,
             uploaderId: user.id,
             uploaderRole: user.role, // Lưu vai trò người upload
+            schoolYear: currentSchoolYear, // Save current school year
             date: new Date().toISOString(),
             classId: classId,
             month: uploadFormData.month,
@@ -1183,7 +1256,7 @@ const ClassRecords: React.FC = () => {
                         <div className="bg-white rounded-xl border border-amber-100 p-6">
                            <h3 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
                               <Folder className="h-5 w-5 text-amber-500" />
-                              Kế hoạch Năm học {getCurrentSchoolYear()} - {getCurrentSchoolYear() + 1}
+                              Kế hoạch Năm học {currentSchoolYear}
                            </h3>
 
                            {/* Filter all files that are planType='year' */}
@@ -1465,248 +1538,7 @@ const ClassRecords: React.FC = () => {
             </div>
          </main>
 
-         {/* --- OLD DRAWER (Disabled - using IntegratedFileViewer instead) --- */}
-         {false && selectedFile && (
-            <div className="fixed inset-0 z-50 overflow-hidden flex justify-end">
-               <div
-                  className="absolute inset-0 bg-gray-900/40 backdrop-blur-sm transition-opacity"
-                  onClick={() => setIsDrawerOpen(false)}
-               ></div>
 
-               <div className="relative w-full max-w-6xl bg-white h-full shadow-2xl flex flex-col animate-in slide-in-from-right duration-300">
-                  {/* Header */}
-                  <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-amber-50 flex-shrink-0">
-                     <div className="flex items-center gap-3">
-                        <div className="p-2 bg-white rounded-lg border border-amber-100 shadow-sm">
-                           {getFileIcon(selectedFile.type)}
-                        </div>
-                        <div>
-                           <span className="text-[10px] font-bold text-amber-600 uppercase tracking-wider mb-0.5 block">
-                              Chi tiết hồ sơ
-                           </span>
-                           <h2 className="text-lg font-bold text-gray-900 leading-tight line-clamp-1">{selectedFile.name}</h2>
-                        </div>
-                     </div>
-                     <div className="flex items-center gap-2">
-
-                        {/* Edit Button - Click file to open in editor */}
-                        {selectedFile && canEditFile(selectedFile) && (
-                           <button
-                              onClick={() => handleOpenFileViewer(selectedFile)}
-                              className="p-2 text-gray-500 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition-colors flex items-center gap-1"
-                              title="Mở trong trình soạn thảo"
-                           >
-                              <Edit3 className="h-5 w-5" />
-                              <span className="text-xs font-medium hidden md:inline">Chỉnh sửa</span>
-                           </button>
-                        )}
-                        <a
-                           href={selectedFile.url}
-                           target="_blank"
-                           rel="noopener noreferrer"
-                           download={selectedFile.name}
-                           className="p-2 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                           title="Tải xuống"
-                        >
-                           <Download className="h-5 w-5" />
-                        </a>
-                        <button onClick={() => setIsDrawerOpen(false)} className="p-2 text-gray-400 hover:text-gray-600 rounded-full hover:bg-gray-200 transition-colors">
-                           <X className="h-6 w-6" />
-                        </button>
-                     </div>
-                  </div>
-
-                  {/* Split View Content */}
-                  <div className="flex-1 overflow-hidden flex flex-col md:flex-row">
-
-                     {/* Left: Preview Area (Scrollable) */}
-                     <div className="flex-1 overflow-hidden bg-gray-100 border-b md:border-b-0 md:border-r border-gray-200 relative flex flex-col">
-                        {/* Floating Action for Preview */}
-                        <div className="absolute top-4 right-6 flex gap-2 z-10">
-                           <button
-                              onClick={() => setIsFullScreenPreviewOpen(true)}
-                              className="bg-white/80 backdrop-blur p-1.5 rounded-md shadow-sm text-gray-600 hover:text-amber-600 border border-gray-200 hover:scale-110 transition-all"
-                              title="Phóng to toàn màn hình"
-                           >
-                              <Maximize2 className="h-4 w-4" />
-                           </button>
-                        </div>
-
-                        {/* Render Dynamic Preview - Full Height */}
-                        <div className="flex-1 w-full h-full">
-                           {renderFilePreview(false)}
-                        </div>
-                     </div>
-
-                     {/* Right: Discussion / Meta (Fixed Width) */}
-                     <div className="w-full md:w-72 lg:w-80 bg-white flex flex-col h-1/2 md:h-full flex-shrink-0">
-
-                        {/* Meta Info */}
-                        <div className="p-4 border-b border-gray-100 bg-white">
-                           <div className="flex items-center justify-between mb-2">
-                              <span className="text-xs text-gray-500">Người đăng</span>
-                              <span className="text-xs font-bold text-gray-800">{selectedFile.uploader}</span>
-                           </div>
-                           <div className="flex items-center justify-between">
-                              <span className="text-xs text-gray-500">Ngày tải lên</span>
-                              <span className="text-xs font-bold text-gray-800">{new Date(selectedFile.date).toLocaleDateString('vi-VN')}</span>
-                           </div>
-                        </div>
-                        {/* Revision History Area (Scrollable) */}
-                        <div className="w-full bg-gray-50 flex flex-col flex-1">
-                           <div className="p-4 bg-white border-b border-gray-100 shadow-sm flex items-center gap-2">
-                              <MessageSquare className="h-5 w-5 text-gray-500" />
-                              <h3 className="font-bold text-gray-800">Lịch sử Yêu cầu & Phản hồi</h3>
-                           </div>
-
-                           <div className="flex-1 overflow-y-auto p-4 space-y-4 font-sans">
-
-                              {/* Active Revision Alert */}
-                              {(selectedFile as any).approval?.status === 'needs_revision' &&
-                                 (selectedFile as any).approval?.rejectionReason &&
-                                 // Hide if the latest comment already shows this request
-                                 !(((selectedFile as any).comments?.length || 0) > 0 &&
-                                    (selectedFile as any).comments[(selectedFile as any).comments.length - 1].type === 'request' &&
-                                    (selectedFile as any).comments[(selectedFile as any).comments.length - 1].content === (selectedFile as any).approval.rejectionReason) && (
-                                    <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-4">
-                                       <h4 className="text-xs font-bold text-amber-800 uppercase mb-1 flex items-center gap-1">
-                                          <AlertCircle className="h-3 w-3" /> Yêu cầu sửa hiện tại
-                                       </h4>
-                                       <p className="text-sm text-amber-900">{(selectedFile as any).approval.rejectionReason}</p>
-                                    </div>
-                                 )}
-
-                              <div className="space-y-4">
-                                 {((selectedFile as any).comments || []).length > 0 ? (
-                                    ((selectedFile as any).comments || []).map((c: Comment) => (
-                                       <div key={c.id} className={`flex gap-3 ${c.type === 'response' ? 'flex-row-reverse' : ''}`}>
-                                          <div className={`h-8 w-8 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 text-white shadow-sm
-                                          ${c.type === 'request' ? 'bg-amber-500' : c.type === 'response' ? 'bg-blue-500' : 'bg-gray-400'}`}>
-                                             {c.userName?.charAt(0) || 'U'}
-                                          </div>
-                                          <div className={`flex-1 max-w-[85%] space-y-1`}>
-                                             <div className={`p-3 rounded-2xl shadow-sm text-sm relative group
-                                             ${c.type === 'request' ? 'bg-amber-50 border border-amber-100 text-gray-800 rounded-tl-none' :
-                                                   c.type === 'response' ? 'bg-blue-50 border border-blue-100 text-gray-800 rounded-tr-none' :
-                                                      'bg-white border border-gray-200 text-gray-600'}`}>
-                                                <div className="flex justify-between items-start mb-1">
-                                                   <span className={`text-xs font-bold ${c.type === 'request' ? 'text-amber-700' : c.type === 'response' ? 'text-blue-700' : 'text-gray-700'}`}>
-                                                      {c.userName}
-                                                      {c.type === 'request' && <span className="ml-1 text-[10px] bg-amber-200 px-1 rounded text-amber-800">Yêu cầu sửa</span>}
-                                                      {c.type === 'response' && <span className="ml-1 text-[10px] bg-blue-200 px-1 rounded text-blue-800">Phản hồi</span>}
-                                                   </span>
-
-                                                   {/* Edit/Delete buttons - only for own comments */}
-                                                   {canManageComment(c) && (
-                                                      <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity absolute right-2 top-2 bg-white/50 rounded-lg p-0.5 backdrop-blur-sm">
-                                                         <button
-                                                            onClick={() => setEditingComment({ id: c.id, content: c.content })}
-                                                            className="p-1 hover:bg-gray-200 rounded text-gray-500 hover:text-blue-600"
-                                                            title="Sửa"
-                                                         >
-                                                            <Edit3 className="h-3 w-3" />
-                                                         </button>
-                                                         <button
-                                                            onClick={() => { setCommentToDelete(c); setIsDeleteCommentModalOpen(true); }}
-                                                            className="p-1 hover:bg-gray-200 rounded text-gray-500 hover:text-red-600"
-                                                            title="Xóa"
-                                                         >
-                                                            <Trash2 className="h-3 w-3" />
-                                                         </button>
-                                                      </div>
-                                                   )}
-                                                </div>
-
-                                                {/* Show edit mode or content */}
-                                                {editingComment?.id === c.id ? (
-                                                   <div className="space-y-2 mt-2">
-                                                      <textarea
-                                                         value={editingComment.content}
-                                                         onChange={(e) => setEditingComment({ ...editingComment, content: e.target.value })}
-                                                         className="w-full text-sm border border-gray-300 rounded p-2 focus:ring-2 focus:ring-blue-500 outline-none"
-                                                         rows={2}
-                                                      />
-                                                      <div className="flex gap-2 justify-end">
-                                                         <button onClick={() => setEditingComment(null)} className="text-xs px-2 py-1 bg-gray-200 rounded hover:bg-gray-300">Hủy</button>
-                                                         <button onClick={handleSaveEditComment} className="text-xs px-2 py-1 bg-blue-500 text-white rounded hover:bg-blue-600">Lưu</button>
-                                                      </div>
-                                                   </div>
-                                                ) : (
-                                                   <p className="whitespace-pre-wrap">{c.content}</p>
-                                                )}
-
-                                                <p className="text-[10px] text-gray-400 mt-1 text-right">
-                                                   {new Date(c.timestamp).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })} - {new Date(c.timestamp).toLocaleDateString('vi-VN')}
-                                                   {(c as any).editedAt && <span className="italic ml-1">(đã sửa)</span>}
-                                                </p>
-                                             </div>
-                                          </div>
-                                       </div>
-                                    ))
-                                 ) : (
-                                    <div className="text-center py-12 flex flex-col items-center text-gray-300">
-                                       <CheckCircle className="h-10 w-10 mb-2 opacity-50" />
-                                       <span className="text-xs italic">Chưa có lịch sử chỉnh sửa nào.</span>
-                                    </div>
-                                 )}
-                                 <div ref={commentsEndRef} />
-                              </div>
-                           </div>
-
-                           {/* Input Area (Conditional) */}
-                           <div className="p-4 bg-white border-t border-gray-200">
-                              {(selectedFile as any).approval?.status === 'needs_revision' && canRespond(selectedFile) ? (
-                                 /* 1. Show Response Input for Author (Teacher) if Needs Revision */
-                                 <form onSubmit={handleResponse} className="flex gap-2 relative">
-                                    <input
-                                       type="text"
-                                       value={newComment}
-                                       onChange={(e) => setNewComment(e.target.value)}
-                                       placeholder="Nhập phản hồi/giải trình của bạn..."
-                                       className="flex-1 bg-gray-50 border border-gray-300 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all shadow-sm"
-                                    />
-                                    <button
-                                       type="submit"
-                                       disabled={!newComment.trim()}
-                                       className="bg-blue-600 hover:bg-blue-700 text-white rounded-xl px-4 py-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-sm flex items-center justify-center"
-                                    >
-                                       <Send className="h-5 w-5" />
-                                    </button>
-                                 </form>
-                              ) : (selectedFile as any).approval?.status === 'pending' && canApproveFile(selectedFile) ? (
-                                 /* 2. Show Actions for Reviewer (Tổ Trưởng/Phó) if Pending */
-                                 <div className="flex gap-2">
-                                    <button
-                                       onClick={() => handleApproveFile(selectedFile)}
-                                       className="px-4 py-2 text-sm font-bold text-white bg-green-500 hover:bg-green-600 rounded-lg transition-colors shadow-sm flex items-center gap-1.5"
-                                    >
-                                       <CheckCircle className="h-4 w-4" /> Duyệt
-                                    </button>
-                                    <button
-                                       onClick={() => openRejectFileModal(selectedFile)}
-                                       className="px-4 py-2 text-sm font-bold text-amber-600 bg-white border border-amber-300 hover:bg-amber-50 rounded-lg transition-colors shadow-sm flex items-center gap-1.5"
-                                    >
-                                       <Edit3 className="h-4 w-4" /> Yêu cầu sửa lại
-                                    </button>
-                                 </div>
-                              ) : (
-                                 /* 3. Helper or Disabled State */
-                                 <div className="text-center text-xs text-gray-500 bg-gray-50 p-2 rounded-lg border border-dashed border-gray-200">
-                                    {(selectedFile as any).approval?.status === 'approved'
-                                       ? "Hồ sơ đã được duyệt. Không thể chỉnh sửa thêm."
-                                       : !canRespond(selectedFile) && (selectedFile as any).approval?.status === 'needs_revision'
-                                          ? "Đang chờ tác giả phản hồi..."
-                                          : "Hồ sơ đang chờ xử lý."}
-                                 </div>
-                              )}
-                           </div>
-                        </div>
-                     </div>
-                  </div>
-               </div>
-            </div>
-         )
-         }
 
          {/* Fullscreen preview removed - using IntegratedFileViewer */}
 
@@ -2061,6 +1893,88 @@ const ClassRecords: React.FC = () => {
                      setNewComment(content);
                      const fakeEvent = { preventDefault: () => { } } as React.FormEvent;
                      handleResponse(fakeEvent);
+                  }}
+                  canManageComment={canManageComment}
+                  onEditComment={async (commentId: string, newContent: string) => {
+                     if (!selectedFile || !user) return;
+                     try {
+                        const fileRef = doc(db, 'class_files', selectedFile.id);
+                        const currentComments = (selectedFile as any).comments || [];
+                        const updatedComments = currentComments.map((c: Comment) =>
+                           c.id === commentId
+                              ? { ...c, content: newContent, editedAt: new Date().toISOString() }
+                              : c
+                        );
+                        await updateDoc(fileRef, { comments: updatedComments });
+                        setSelectedFile({
+                           ...selectedFile,
+                           comments: updatedComments
+                        } as any);
+                        addToast("Đã cập nhật góp ý", "Nội dung góp ý đã được lưu.", "success");
+                     } catch (error) {
+                        console.error("Error editing comment:", error);
+                        addToast("Lỗi", "Không thể cập nhật góp ý.", "error");
+                     }
+                  }}
+                  onDeleteComment={async (commentId: string) => {
+                     if (!selectedFile || !user) return;
+                     const commentToDeleteFound = (selectedFile as any).comments?.find((c: any) => c.id === commentId);
+                     if (!commentToDeleteFound) return;
+
+                     try {
+                        const fileRef = doc(db, 'class_files', selectedFile.id);
+                        const currentComments = (selectedFile as any).comments || [];
+                        const updatedComments = currentComments.filter((c: Comment) => c.id !== commentId);
+
+                        const updateData: any = {
+                           comments: updatedComments,
+                           commentCount: updatedComments.length,
+                           hasNewComments: updatedComments.length > 0
+                        };
+
+                        // Special Logic: If deleting a 'request', revert status to pending
+                        let newApprovalStatus = (selectedFile as any).approval?.status;
+                        let newRejectionReason = (selectedFile as any).approval?.rejectionReason;
+
+                        if (commentToDeleteFound.type === 'request') {
+                           if (newApprovalStatus === 'needs_revision') {
+                              newApprovalStatus = 'pending';
+                              newRejectionReason = undefined;
+                              updateData['approval.status'] = 'pending';
+                              updateData['approval.rejectionReason'] = deleteField();
+                              addToast("Đã hoàn tác", "Yêu cầu sửa đã bị xóa. Trạng thái hồ sơ trở về 'Chờ duyệt'.", "info");
+                           }
+                        }
+
+                        // Special Logic: If deleting a 'response', check if there's still an active request
+                        if (commentToDeleteFound.type === 'response') {
+                           const hasActiveRequest = updatedComments.some((c: Comment) => c.type === 'request');
+                           if (hasActiveRequest && newApprovalStatus === 'pending') {
+                              newApprovalStatus = 'needs_revision';
+                              updateData['approval.status'] = 'needs_revision';
+                              addToast("Đã hoàn tác", "Phản hồi đã bị xóa. Bạn có thể phản hồi lại.", "info");
+                           }
+                        }
+
+                        await updateDoc(fileRef, updateData);
+
+                        setSelectedFile({
+                           ...selectedFile,
+                           comments: updatedComments,
+                           commentCount: updatedComments.length,
+                           hasNewComments: updatedComments.length > 0,
+                           approval: {
+                              ...(selectedFile as any).approval,
+                              status: newApprovalStatus,
+                              rejectionReason: newRejectionReason
+                           }
+                        } as any);
+
+                        addToast("Đã xóa góp ý", "Góp ý đã được xóa thành công.", "success");
+                     } catch (error) {
+                        console.error("Error deleting comment:", error);
+                        addToast("Lỗi", "Không thể xóa góp ý.", "error");
+                     }
                   }}
                />
             )
