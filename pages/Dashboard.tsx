@@ -220,18 +220,23 @@ const Dashboard: React.FC = () => {
           <div className={`group relative overflow-hidden ${isMobile ? 'rounded-xl' : 'rounded-2xl'} border border-blue-100 bg-white shadow-lg transition-all duration-500 ease-out hover:-translate-y-1 hover:shadow-xl hover:shadow-blue-200 hover:border-blue-300 flex flex-col`}>
             <div className="absolute -right-10 -top-10 h-40 w-40 rounded-full bg-gradient-to-br from-blue-50 to-indigo-100 blur-3xl opacity-50"></div>
 
-            <div className={`${isMobile ? 'p-4 pb-2' : 'p-8 pb-4'} relative z-10`}>
-              <div className={`${isMobile ? 'mb-2 h-10 w-10' : 'mb-4 h-14 w-14'} inline-flex items-center justify-center rounded-xl bg-gradient-to-br from-blue-50 to-blue-100 text-blue-600 shadow-sm group-hover:scale-110 transition-transform duration-500`}>
-                <FolderOpen className={`${isMobile ? 'h-5 w-5' : 'h-7 w-7'}`} />
+            {/* Gradient Header */}
+            <div className={`${isMobile ? 'p-3' : 'p-5'} relative z-10 bg-gradient-to-r from-blue-500 to-indigo-500`}>
+              <div className="flex items-center gap-3">
+                <div className={`${isMobile ? 'h-9 w-9' : 'h-11 w-11'} inline-flex items-center justify-center rounded-xl bg-white/20 backdrop-blur-sm text-white shadow-sm`}>
+                  <FolderOpen className={`${isMobile ? 'h-5 w-5' : 'h-6 w-6'}`} />
+                </div>
+                <div>
+                  <h3 className={`${isMobile ? 'text-sm' : 'text-base'} font-bold text-white`}>
+                    QUẢN LÝ VĂN BẢN CHUNG
+                  </h3>
+                  {!isMobile && (
+                    <p className="text-blue-100 text-xs mt-0.5">
+                      Lưu trữ và quản lý tập trung các văn bản hành chính đi và đến.
+                    </p>
+                  )}
+                </div>
               </div>
-              <h3 className={`${isMobile ? 'mb-1 text-base' : 'mb-2 text-2xl'} font-bold text-gray-800 tracking-tight group-hover:text-blue-700 transition-colors`}>
-                QUẢN LÝ VĂN BẢN CHUNG
-              </h3>
-              {!isMobile && (
-                <p className="text-gray-500 leading-relaxed text-sm">
-                  Lưu trữ và quản lý tập trung các văn bản hành chính đi và đến.
-                </p>
-              )}
             </div>
 
             <div className={`flex-1 grid grid-cols-2 gap-px bg-gray-100 border-t border-gray-100 ${isMobile ? 'mt-1' : 'mt-2'}`}>
@@ -277,19 +282,23 @@ const Dashboard: React.FC = () => {
             <div className={`group relative overflow-hidden ${isMobile ? 'rounded-xl' : 'rounded-2xl'} border border-indigo-100 bg-white shadow-lg transition-all duration-500 ease-out hover:-translate-y-1 hover:shadow-xl hover:shadow-indigo-200 hover:border-indigo-300 flex flex-col`}>
               <div className="absolute -right-10 -top-10 h-40 w-40 rounded-full bg-gradient-to-br from-indigo-50 to-purple-100 blur-3xl opacity-50 group-hover:opacity-80 transition-opacity"></div>
 
-              {/* Header */}
-              <div className={`${isMobile ? 'p-4 pb-2' : 'p-8 pb-4'} relative z-10`}>
-                <div className={`${isMobile ? 'mb-2 h-10 w-10' : 'mb-4 h-14 w-14'} inline-flex items-center justify-center rounded-xl bg-gradient-to-br from-indigo-50 to-indigo-100 text-indigo-600 shadow-sm group-hover:scale-110 transition-transform duration-500`}>
-                  <Briefcase className={`${isMobile ? 'h-5 w-5' : 'h-7 w-7'}`} />
+              {/* Gradient Header */}
+              <div className={`${isMobile ? 'p-3' : 'p-5'} relative z-10 bg-gradient-to-r from-indigo-500 to-purple-500`}>
+                <div className="flex items-center gap-3">
+                  <div className={`${isMobile ? 'h-9 w-9' : 'h-11 w-11'} inline-flex items-center justify-center rounded-xl bg-white/20 backdrop-blur-sm text-white shadow-sm`}>
+                    <Briefcase className={`${isMobile ? 'h-5 w-5' : 'h-6 w-6'}`} />
+                  </div>
+                  <div>
+                    <h3 className={`${isMobile ? 'text-sm' : 'text-base'} font-bold text-white`}>
+                      TỔ VĂN PHÒNG
+                    </h3>
+                    {!isMobile && (
+                      <p className="text-indigo-100 text-xs mt-0.5">
+                        Quản lý hành chính, nhân sự, tài sản, y tế, thực đơn và các công tác hỗ trợ khác.
+                      </p>
+                    )}
+                  </div>
                 </div>
-                <h3 className={`${isMobile ? 'mb-1 text-base' : 'mb-2 text-2xl'} font-bold text-gray-800 tracking-tight group-hover:text-indigo-700 transition-colors`}>
-                  TỔ VĂN PHÒNG
-                </h3>
-                {!isMobile && (
-                  <p className="text-gray-500 leading-relaxed text-sm">
-                    Quản lý hành chính, nhân sự, tài sản, y tế, thực đơn và các công tác hỗ trợ khác.
-                  </p>
-                )}
               </div>
 
               {/* Sub-items - Always side-by-side */}
@@ -338,19 +347,23 @@ const Dashboard: React.FC = () => {
             <div className={`group relative overflow-hidden ${isMobile ? 'rounded-xl' : 'rounded-2xl'} border border-amber-100 bg-white shadow-lg transition-all duration-500 ease-out hover:-translate-y-1 hover:shadow-xl hover:shadow-amber-200 hover:border-amber-300 flex flex-col`}>
               <div className="absolute -right-10 -top-10 h-40 w-40 rounded-full bg-gradient-to-br from-amber-50 to-orange-100 blur-3xl opacity-50 group-hover:opacity-80 transition-opacity"></div>
 
-              {/* Header */}
-              <div className={`${isMobile ? 'p-4 pb-2' : 'p-8 pb-2'} relative z-10`}>
-                <div className={`${isMobile ? 'mb-2 h-10 w-10' : 'mb-4 h-14 w-14'} inline-flex items-center justify-center rounded-xl bg-gradient-to-br from-amber-50 to-amber-100 text-amber-600 shadow-sm group-hover:scale-110 transition-transform duration-500`}>
-                  <GraduationCap className={`${isMobile ? 'h-5 w-5' : 'h-8 w-8'}`} />
+              {/* Gradient Header */}
+              <div className={`${isMobile ? 'p-3' : 'p-5'} relative z-10 bg-gradient-to-r from-amber-500 to-orange-500`}>
+                <div className="flex items-center gap-3">
+                  <div className={`${isMobile ? 'h-9 w-9' : 'h-11 w-11'} inline-flex items-center justify-center rounded-xl bg-white/20 backdrop-blur-sm text-white shadow-sm`}>
+                    <GraduationCap className={`${isMobile ? 'h-5 w-5' : 'h-6 w-6'}`} />
+                  </div>
+                  <div>
+                    <h3 className={`${isMobile ? 'text-sm' : 'text-base'} font-bold text-white`}>
+                      TỔ CHUYÊN MÔN
+                    </h3>
+                    {!isMobile && (
+                      <p className="text-amber-100 text-xs mt-0.5">
+                        Kế hoạch giảng dạy, bài soạn, chuyên đề, dữ liệu các lớp và tài liệu tham khảo.
+                      </p>
+                    )}
+                  </div>
                 </div>
-                <h3 className={`${isMobile ? 'mb-1 text-base' : 'mb-2 text-2xl'} font-bold text-gray-800 tracking-tight group-hover:text-amber-700 transition-colors`}>
-                  TỔ CHUYÊN MÔN
-                </h3>
-                {!isMobile && (
-                  <p className="text-gray-500 leading-relaxed text-sm mb-4">
-                    Kế hoạch giảng dạy, bài soạn, chuyên đề, dữ liệu các lớp và tài liệu tham khảo.
-                  </p>
-                )}
               </div>
 
               {/* Section 1: Organization Plans */}
