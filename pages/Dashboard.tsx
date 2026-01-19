@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { DASHBOARD_CARDS } from '../constants';
 import { MOCK_CLASSES } from '../data/mockData';
 import DashboardCard from '../components/DashboardCard';
+import ClassroomStatsCard from '../components/ClassroomStatsCard';
 import {
   LayoutGrid,
   FolderOpen,
@@ -412,6 +413,14 @@ const Dashboard: React.FC = () => {
                 </div>
               </div>
             </div>
+          )}
+
+          {/* --- 4. THỐNG KÊ LỚP HỌC (Admin Only) --- */}
+          {user.role === 'admin' && (
+            <ClassroomStatsCard
+              currentSchoolYear={currentSchoolYear}
+              classes={classes}
+            />
           )}
 
           {/* --- Remaining Standard Cards (Admin & Authorized Vice Principal) --- */}
