@@ -573,7 +573,7 @@ const DirectiveDocuments: React.FC = () => {
                 <div className="flex-1 relative overflow-hidden">
                   {selectedDoc.fileDinhKemUrl && selectedDoc.fileDinhKemUrl !== '#' ? (
                     <iframe
-                      src={getPreviewUrl(selectedDoc.fileDinhKemUrl)}
+                      src={getPreviewUrl(selectedDoc.fileDinhKemUrl, isMobile)}
                       className="w-full h-full bg-white"
                       title="Document Preview"
                     />
@@ -714,7 +714,7 @@ const DirectiveDocuments: React.FC = () => {
                         <div className="absolute inset-0 w-full h-full">
                           {selectedDoc.fileDinhKemUrl && selectedDoc.fileDinhKemUrl !== '#' ? (
                             <iframe
-                              src={getPreviewUrl(selectedDoc.fileDinhKemUrl)}
+                              src={getPreviewUrl(selectedDoc.fileDinhKemUrl, isMobile)}
                               className="w-full h-full"
                               title="Document Preview"
                             />

@@ -301,7 +301,7 @@ const BoardingMenu: React.FC = () => {
 
       // Check if file has URL
       if (selectedDoc.fileUrl && selectedDoc.fileUrl !== '#') {
-         const previewUrl = getPreviewUrl(selectedDoc.fileUrl);
+         const previewUrl = getPreviewUrl(selectedDoc.fileUrl, isMobile);
 
          // Special handling for Excel files
          if (previewUrl === 'EXCEL_NO_PREVIEW') {

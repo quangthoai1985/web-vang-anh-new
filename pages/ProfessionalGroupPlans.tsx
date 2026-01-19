@@ -815,7 +815,7 @@ const ProfessionalGroupPlans: React.FC = () => {
 
       // Check if file has URL
       if (itemUrl && itemUrl !== '#') {
-         const previewUrl = getPreviewUrl(itemUrl);
+         const previewUrl = getPreviewUrl(itemUrl, isMobile);
 
          // Special handling for Excel files
          if (previewUrl === 'EXCEL_NO_PREVIEW') {

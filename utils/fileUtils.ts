@@ -15,7 +15,19 @@ export const isOfficeFile = (url: string): boolean => {
     }
 };
 
-export const getPreviewUrl = (url: string): string => {
+// Helper to check if URL is a PDF
+export const isPdfFile = (url: string): boolean => {
+    try {
+        const urlObj = new URL(url);
+        const pathname = decodeURIComponent(urlObj.pathname).toLowerCase();
+        return pathname.endsWith('.pdf');
+    } catch (e) {
+        const lowerUrl = url.toLowerCase().split('?')[0];
+        return lowerUrl.endsWith('.pdf');
+    }
+};
+
+export const getPreviewUrl = (url: string, isMobile: boolean = false): string => {
     if (!url || url === '#') return '#';
 
     // Check if it's an Excel file - these often fail in viewers
@@ -24,13 +36,23 @@ export const getPreviewUrl = (url: string): string => {
         return 'EXCEL_NO_PREVIEW'; // Special marker for Excel files
     }
 
+    // Office files always use Google Docs Viewer (both mobile and desktop)
     if (isOfficeFile(url)) {
-        // Use Google Docs Viewer - it works with Firebase Storage authenticated URLs
-        // Note: On mobile, user may need to tap "Open" button to view the document
         return `https://docs.google.com/viewer?url=${encodeURIComponent(url)}&embedded=true`;
     }
 
-    // PDFs and images can be displayed directly
+    // PDF files: 
+    // - Mobile: Use Google Docs Viewer (direct PDF URLs often fail on real mobile browsers)
+    // - Desktop: Display PDF directly in iframe (better performance)
+    if (isPdfFile(url)) {
+        if (isMobile) {
+            return `https://docs.google.com/viewer?url=${encodeURIComponent(url)}&embedded=true`;
+        }
+        // Desktop: return direct URL for native browser PDF rendering
+        return url;
+    }
+
+    // Images can be displayed directly
     return url;
 };
 
