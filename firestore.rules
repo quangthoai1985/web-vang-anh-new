@@ -111,8 +111,8 @@ service cloud.firestore {
       allow read: if isAdmin() || isVicePrincipal() || isHeadTeacher() || isViceHeadTeacher() || isOfficeHead() || isStaff() || isBootstrapAdmin() ||
                      (isTeacher() && resource.data.classId == getUserData().accessScope);
       
-      // Admin và Head Teacher có full quyền write
-      allow write: if isAdmin() || isHeadTeacher() || isViceHeadTeacher() || isBootstrapAdmin();
+      // Admin, Vice Principal (duyệt cho Tổ trưởng/Tổ phó), Head Teacher có full quyền write
+      allow write: if isAdmin() || isVicePrincipal() || isHeadTeacher() || isViceHeadTeacher() || isBootstrapAdmin();
       
       // Teacher được tạo/sửa/xóa file cho lớp mình
       // Đảm bảo classId trong file match với accessScope của teacher
