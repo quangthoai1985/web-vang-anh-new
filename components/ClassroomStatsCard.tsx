@@ -79,6 +79,33 @@ const ClassroomStatsCard: React.FC<ClassroomStatsCardProps> = ({ currentSchoolYe
     const [selectedMonth, setSelectedMonth] = useState(systemMonth);
     const [selectedYear, setSelectedYear] = useState(systemYear);
 
+    // --- NEW: Fetch Approver Info ---
+    const [approvers, setApprovers] = useState<{
+        vicePrincipals: any[];
+        headTeachers: any[]; // List of all head/vice head teachers
+        headTeacherScopes: string[]; // accessScope của Tổ trưởng/Phó (lớp của họ)
+    }>({ vicePrincipals: [], headTeachers: [], headTeacherScopes: [] });
+
+    useEffect(() => {
+        const qUsers = query(
+            collection(db, 'users'),
+            where('role', 'in', ['vice_principal', 'head_teacher', 'vice_head_teacher'])
+        );
+
+        const unsubscribeUsers = onSnapshot(qUsers, (snapshot) => {
+            const users = snapshot.docs.map(doc => doc.data());
+
+            const vps = users.filter((u: any) => u.role === 'vice_principal');
+
+            const heads = users.filter((u: any) => ['head_teacher', 'vice_head_teacher'].includes(u.role));
+            const scopes = heads.map((u: any) => u.accessScope).filter(Boolean);
+
+            setApprovers({ vicePrincipals: vps, headTeachers: heads, headTeacherScopes: scopes });
+        });
+
+        return () => unsubscribeUsers();
+    }, []);
+
     const monthNames: { [key: string]: string } = {
         '01': 'Tháng 1', '02': 'Tháng 2', '03': 'Tháng 3', '04': 'Tháng 4',
         '05': 'Tháng 5', '06': 'Tháng 6', '07': 'Tháng 7', '08': 'Tháng 8',
@@ -204,6 +231,23 @@ const ClassroomStatsCard: React.FC<ClassroomStatsCardProps> = ({ currentSchoolYe
         );
     }
 
+    const getReviewerName = (clsId: string, type: 'week' | 'month') => {
+        if (type === 'month') {
+            // Kế hoạch Tháng -> Phó Hiệu trưởng duyệt tất cả
+            return approvers.vicePrincipals.map(u => u.fullName).join(', ') || 'Chưa có PHT';
+        } else {
+            // Kế hoạch Tuần:
+            // - Nếu lớp này là lớp của Tổ trưởng/Tổ phó (accessScope của họ) -> Phó Hiệu trưởng duyệt
+            // - Ngược lại -> Tổ trưởng/Tổ phó duyệt
+            const isHeadTeacherClass = approvers.headTeacherScopes.includes(clsId);
+            if (isHeadTeacherClass) {
+                return approvers.vicePrincipals.map(u => u.fullName).join(', ') || 'Chưa có PHT';
+            } else {
+                return approvers.headTeachers.map((u: any) => u.fullName).join(', ') || 'Chưa phân công';
+            }
+        }
+    };
+
     return (
         <div className={`group relative overflow-hidden ${isMobile ? 'rounded-xl' : 'rounded-2xl'} border border-teal-100 bg-white shadow-lg transition-all duration-500 ease-out hover:-translate-y-1 hover:shadow-xl hover:shadow-teal-200 hover:border-teal-300`}>
             {/* Background Decor */}
@@ -217,7 +261,7 @@ const ClassroomStatsCard: React.FC<ClassroomStatsCardProps> = ({ currentSchoolYe
                             <BarChart3 className={`${isMobile ? 'h-5 w-5' : 'h-6 w-6'}`} />
                         </div>
                         <h3 className={`${isMobile ? 'text-sm' : 'text-base'} font-bold text-white`}>
-                            THỐNG KÊ LỚP HỌC
+                            THEO DÕI PHÊ DUYỆT KẾ HOẠCH
                         </h3>
                     </div>
                     <div className="flex items-center gap-1">
@@ -383,9 +427,11 @@ const ClassroomStatsCard: React.FC<ClassroomStatsCardProps> = ({ currentSchoolYe
                 {/* Approval Detail Panel */}
                 {showApprovalDetail && (
                     <div className={`mt-3 ${isMobile ? 'p-2' : 'p-3'} bg-gray-50 rounded-lg border border-gray-200`}>
-                        <p className={`${isMobile ? 'text-[10px]' : 'text-xs'} font-semibold text-gray-700 mb-2`}>
-                            Chi tiết phê duyệt {activeTab === 'week' ? 'kế hoạch tuần' : 'kế hoạch tháng'}:
-                        </p>
+                        <div className="flex items-center justify-between mb-2">
+                            <p className={`${isMobile ? 'text-[10px]' : 'text-xs'} font-semibold text-gray-700`}>
+                                Chi tiết phê duyệt {activeTab === 'week' ? 'kế hoạch tuần' : 'kế hoạch tháng'}:
+                            </p>
+                        </div>
 
                         <div className="space-y-1.5">
                             {stats.classStatuses.map(cls => {
@@ -393,34 +439,37 @@ const ClassroomStatsCard: React.FC<ClassroomStatsCardProps> = ({ currentSchoolYe
                                 const pending = activeTab === 'week' ? cls.weekPendingCount : cls.monthPendingCount;
                                 const total = approved + pending;
                                 const hasUploaded = activeTab === 'week' ? cls.hasWeekPlan : cls.hasMonthPlan;
-
-                                if (!hasUploaded) {
-                                    return (
-                                        <div key={cls.classId} className={`flex items-center justify-between ${isMobile ? 'py-1 px-1.5' : 'py-1.5 px-2'} bg-gray-100 rounded`}>
-                                            <span className={`${isMobile ? 'text-[9px]' : 'text-xs'} font-medium text-gray-500`}>{cls.className}</span>
-                                            <span className={`${isMobile ? 'text-[9px]' : 'text-xs'} text-gray-400 italic`}>Chưa nộp</span>
-                                        </div>
-                                    );
-                                }
+                                const reviewerName = getReviewerName(cls.classId, activeTab);
 
                                 return (
-                                    <div key={cls.classId} className={`flex items-center justify-between ${isMobile ? 'py-1 px-1.5' : 'py-1.5 px-2'} bg-white rounded border border-gray-100`}>
-                                        <span className={`${isMobile ? 'text-[9px]' : 'text-xs'} font-medium text-gray-700`}>{cls.className}</span>
-                                        <div className="flex items-center gap-2">
-                                            {approved > 0 && (
-                                                <span className={`flex items-center gap-0.5 ${isMobile ? 'text-[9px]' : 'text-xs'} text-emerald-600`}>
-                                                    <CheckCircle2 className="h-3 w-3" /> {approved} duyệt
-                                                </span>
-                                            )}
-                                            {pending > 0 && (
-                                                <span className={`flex items-center gap-0.5 ${isMobile ? 'text-[9px]' : 'text-xs'} text-amber-600`}>
-                                                    <Clock className="h-3 w-3" /> {pending} chờ
-                                                </span>
-                                            )}
-                                            {total === 0 && (
-                                                <span className={`${isMobile ? 'text-[9px]' : 'text-xs'} text-gray-400`}>0 kế hoạch</span>
-                                            )}
+                                    <div key={cls.classId} className={`flex items-center justify-between ${isMobile ? 'py-1 px-1.5' : 'py-1.5 px-2'} ${hasUploaded ? 'bg-white' : 'bg-gray-100'} rounded border border-gray-100`}>
+                                        <div className="flex flex-col">
+                                            <span className={`${isMobile ? 'text-[9px]' : 'text-xs'} font-medium text-gray-700`}>{cls.className}</span>
+                                            {/* Reviewer Name */}
+                                            <span className={`${isMobile ? 'text-[8px]' : 'text-[10px]'} text-gray-500`}>
+                                                Người duyệt: <span className="font-semibold text-teal-600">{reviewerName}</span>
+                                            </span>
                                         </div>
+
+                                        {!hasUploaded ? (
+                                            <span className={`${isMobile ? 'text-[9px]' : 'text-xs'} text-gray-400 italic`}>Chưa nộp</span>
+                                        ) : (
+                                            <div className="flex items-center gap-2">
+                                                {approved > 0 && (
+                                                    <span className={`flex items-center gap-0.5 ${isMobile ? 'text-[9px]' : 'text-xs'} text-emerald-600`}>
+                                                        <CheckCircle2 className="h-3 w-3" /> {approved} duyệt
+                                                    </span>
+                                                )}
+                                                {pending > 0 && (
+                                                    <span className={`flex items-center gap-0.5 ${isMobile ? 'text-[9px]' : 'text-xs'} text-amber-600`}>
+                                                        <Clock className="h-3 w-3" /> {pending} chờ
+                                                    </span>
+                                                )}
+                                                {total === 0 && (
+                                                    <span className={`${isMobile ? 'text-[9px]' : 'text-xs'} text-gray-400`}>0 kế hoạch</span>
+                                                )}
+                                            </div>
+                                        )}
                                     </div>
                                 );
                             })}
