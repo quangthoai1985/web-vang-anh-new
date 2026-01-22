@@ -392,6 +392,7 @@ const ClassRecords: React.FC = () => {
    };
 
    // Kiểm tra quyền duyệt file (Tổ trưởng/Tổ phó duyệt file của giáo viên)
+   // Kiểm tra quyền duyệt file (Tổ trưởng/Tổ phó duyệt file của giáo viên)
    const canApproveFile = (file: any): boolean => {
       if (!user) return false;
 
@@ -417,13 +418,42 @@ const ClassRecords: React.FC = () => {
 
       if (!distinctUploaderRole) return false;
 
-      // 2. Phó Hiệu Trưởng duyệt cho Tổ Trưởng và Tổ Phó
-      if (user.role === 'vice_principal') {
-         return ['head_teacher', 'vice_head_teacher'].includes(distinctUploaderRole);
+      // --- NEW RULE: Chỉ Hiệu Trưởng (admin) được duyệt "Kế hoạch năm" ---
+      // Các role khác (Phó HT, Tổ trưởng...) dù có quyền duyệt người này nhưng nếu là KH Năm thì cũng KHÔNG được duyệt.
+      if (file.planType === 'year') {
+         // Chỉ Admin (Hiệu trưởng) được duyệt
+         return user.role === 'admin';
       }
 
-      // 3. Tổ trưởng + Tổ phó duyệt cho Giáo viên
+      // 2. Phó Hiệu Trưởng
+      if (user.role === 'vice_principal') {
+         // 2.1. Được duyệt TẤT CẢ "Kế hoạch tháng" (planType === 'month')
+         if (file.planType === 'month') {
+            return true;
+         }
+
+         // 2.2. Được duyệt file của Tổ Trưởng và Tổ Phó (các loại khác)
+         if (['head_teacher', 'vice_head_teacher'].includes(distinctUploaderRole)) {
+            return true;
+         }
+
+         // Mặc định: Không duyệt Kế hoạch tuần của Teacher (để Tổ trưởng duyệt)
+         // Trừ khi muốn override? Theo yêu cầu là "như cũ không thể duyệt..." -> ý là Tổ trưởng không thể tự duyệt.
+         // Logic cũ: VP duyệt Head/ViceHead. 
+         // Yêu cầu mới: "Phó Hiệu trưởng có thể duyệt 'Kế hoạch tháng'... của tất cả các lớp".
+
+         return false;
+      }
+
+      // 3. Tổ trưởng + Tổ phó chuyên môn
       if (['head_teacher', 'vice_head_teacher'].includes(user.role)) {
+         // 3.1. CHỈ được duyệt "Kế hoạch tuần" (planType === 'week')
+         // Nếu file không phải kế hoạch tuần -> Không được duyệt (ví dụ: Kế hoạch tháng)
+         if (file.planType !== 'week') {
+            return false;
+         }
+
+         // 3.2. Duyệt cho Giáo viên (như cũ)
          return distinctUploaderRole === 'teacher';
       }
 

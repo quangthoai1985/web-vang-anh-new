@@ -111,8 +111,31 @@ service cloud.firestore {
       allow read: if isAdmin() || isVicePrincipal() || isHeadTeacher() || isViceHeadTeacher() || isOfficeHead() || isStaff() || isBootstrapAdmin() ||
                      (isTeacher() && resource.data.classId == getUserData().accessScope);
       
-      // Admin, Vice Principal (duyệt cho Tổ trưởng/Tổ phó), Head Teacher có full quyền write
-      allow write: if isAdmin() || isVicePrincipal() || isHeadTeacher() || isViceHeadTeacher() || isBootstrapAdmin();
+      // --- Phân quyền chi tiết (Create/Delete/Update) ---
+      
+      // 1. CREATE & DELETE:
+      // Cho phép Admin, VP, Head, ViceHead tạo và xóa (có thể restrict delete sau nếu cần)
+      allow create, delete: if isAdmin() || isVicePrincipal() || isHeadTeacher() || isViceHeadTeacher() || isBootstrapAdmin();
+      
+      // 2. UPDATE (Duyệt & Sửa):
+      allow update: if 
+                    // a) ADMIN (Hiệu Trưởng) & Bootstrap: Full quyền
+                    isAdmin() || isBootstrapAdmin() ||
+                    
+                    // b) CÁC ROLE KHÁC (Chỉ được update nếu KHÔNG PHẢI Kế hoạch năm)
+                    (resource.data.planType != 'year' && (
+                        // Logic cho Phó Hiệu Trưởng (VP):
+                        (isVicePrincipal() && (
+                            resource.data.uploaderId == request.auth.uid || // Sửa file mình
+                            resource.data.planType == 'month' ||            // Duyệt tất cả Kế hoạch THÁNG
+                            resource.data.uploaderRole in ['head_teacher', 'vice_head_teacher'] // Duyệt file Tổ trưởng/Phó
+                        )) ||
+                        // Logic cho Tổ Trưởng / Tổ Phó (Head):
+                        ((isHeadTeacher() || isViceHeadTeacher()) && (
+                            resource.data.uploaderId == request.auth.uid || // Sửa file mình
+                            (resource.data.planType == 'week' && resource.data.uploaderRole == 'teacher') // Chỉ duyệt KH TUẦN của Teacher
+                        ))
+                    ));
       
       // Teacher được tạo/sửa/xóa file cho lớp mình
       // Đảm bảo classId trong file match với accessScope của teacher
